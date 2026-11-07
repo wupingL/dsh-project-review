@@ -48,12 +48,39 @@ class Git:
             self.command("fetch", "--no-tags", "origin",
                          f"+refs/heads/{branch}:refs/remotes/origin/{branch}")
 
+    def fetch_branch(self, branch):
+        """拉取任意分支到 refs/remotes/origin/<branch>（不改变已配置分支列表）。
+
+        先取远端 origin；不可用（离线/私有地址仅在本地有 clone）时回退到配置的本地 clone。
+        """
+        self.initialize()
+        self.command("check-ref-format", "refs/heads/" + branch)
+        refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
+        try:
+            self.command("fetch", "--no-tags", "origin", refspec)
+        except RuntimeError:
+            local = Path(self.config.get("local_repo", ""))
+            if not local.is_dir():
+                raise
+            self.command("fetch", "--no-tags", str(local.resolve()), refspec)
+        return self.resolve(branch)
+
     def resolve(self, ref):
         self.initialize()
         if ref.startswith("-"):
             raise ValueError("Invalid ref")
-        candidate = "refs/remotes/origin/" + ref if ref in self.config.get("branches") else ref
-        return self.command("rev-parse", "--verify", "--end-of-options", candidate + "^{commit}").strip()
+        configured = ref in self.config.get("branches")
+        candidates = ["refs/remotes/origin/" + ref] if configured else []
+        candidates.append(ref)
+        candidates.append("refs/remotes/origin/" + ref)
+        last = None
+        for candidate in candidates:
+            try:
+                return self.command("rev-parse", "--verify", "--end-of-options",
+                                    candidate + "^{commit}").strip()
+            except RuntimeError as exc:
+                last = exc
+        raise last
 
     def fetch_head(self, url, sha):
         if not re.fullmatch(r"[0-9a-f]{40,64}", sha):

@@ -132,6 +132,65 @@ window.__ModuleLoader__.load({
       'aria.prRow': '#{number} {title}，{state}，{review}',
       'aria.filesToggle': '切换变更文件列表',
       'aria.descriptionToggle': '切换 PR 描述展开状态',
+      'view.projects': '项目总览',
+      'action.import': '导入项目',
+      'action.open': '打开',
+      'action.backToProjects': '项目',
+      'action.check': '检查更新',
+      'action.cancel': '取消',
+      'projects.loading': '正在载入项目',
+      'projects.empty': '还没有加载任何项目',
+      'projects.emptyHint': '点击「导入项目」，填写 GitCode/GitHub 的 HTTPS 仓库地址。',
+      'projects.errorTitle': '项目列表加载失败',
+      'projects.errorHint': '无法读取项目注册表，请重试。',
+      'projects.branchCount': '{n} 个分支',
+      'project.active': '当前',
+      'knowledge.title': '知识库',
+      'knowledge.status.missing': '未构建',
+      'knowledge.status.stale': '有更新',
+      'knowledge.status.current': '已最新',
+      'knowledge.remote': '远端',
+      'knowledge.snapshot': '快照',
+      'knowledge.none': '未构建',
+      'knowledge.semantic': '语义',
+      'knowledge.structural': '结构',
+      'knowledge.structuralOnly': '结构索引',
+      'knowledge.behind': '落后 {n} 个提交',
+      'knowledge.domains': '{n} 个领域',
+      'knowledge.checking': '正在检查…',
+      'knowledge.syncStructural': '更新结构索引',
+      'knowledge.syncSemantic': '语义同步',
+      'knowledge.semanticDisabled': '语义同步不可用：{reason}',
+      'knowledge.missingHint': '该分支还没有知识库快照，可先构建结构索引。',
+      'knowledge.staleHint': '远端有新提交，知识库需要更新。',
+      'knowledge.currentHint': '知识库与远端一致。',
+      'knowledge.running': '同步中…',
+      'knowledge.progress': '同步进度',
+      'knowledge.synced': '已同步：{sha}',
+      'knowledge.failed': '同步失败：{message}',
+      'knowledge.structuralDone': '结构索引已更新：{sha}',
+      'branch.label': '分支',
+      'import.title': '导入项目',
+      'import.url': '仓库地址',
+      'import.urlHint': 'HTTPS 地址，例如 https://gitcode.com/owner/repo',
+      'import.name': '项目名称',
+      'import.nameHint': '留空则使用仓库名',
+      'import.local': '本地 clone 路径（可选）',
+      'import.localHint': '填写已存在的本地仓库可避免重新下载，且必须与地址一致',
+      'import.branches': '分支',
+      'import.probe': '读取分支',
+      'import.probing': '读取中…',
+      'import.submit': '导入',
+      'import.importing': '导入中…',
+      'import.existing': '该项目已经加载过，已为你打开。',
+      'import.urlInvalid': '请输入以 https:// 开头的仓库地址',
+      'import.branchRequired': '请至少选择一个分支',
+      'import.probeFirst': '请先点「读取分支」，或直接导入（默认分支）',
+      'aria.projects': '项目列表',
+      'aria.import': '导入项目对话框',
+      'aria.branch': '切换分支',
+      'aria.knowledge': '知识库状态',
+      'aria.close': '关闭',
     };
 
     const EN = {
@@ -251,6 +310,65 @@ window.__ModuleLoader__.load({
       'aria.prRow': '#{number} {title}, {state}, {review}',
       'aria.filesToggle': 'Toggle the changed files list',
       'aria.descriptionToggle': 'Toggle the PR description',
+      'view.projects': 'Projects',
+      'action.import': 'Import project',
+      'action.open': 'Open',
+      'action.backToProjects': 'Projects',
+      'action.check': 'Check',
+      'action.cancel': 'Cancel',
+      'projects.loading': 'Loading projects',
+      'projects.empty': 'No project loaded yet',
+      'projects.emptyHint': 'Use “Import project” and enter an HTTPS Git URL.',
+      'projects.errorTitle': 'Could not load projects',
+      'projects.errorHint': 'The project registry is unreadable. Retry.',
+      'projects.branchCount': '{n} branches',
+      'project.active': 'Active',
+      'knowledge.title': 'Knowledge',
+      'knowledge.status.missing': 'Not built',
+      'knowledge.status.stale': 'Out of date',
+      'knowledge.status.current': 'Up to date',
+      'knowledge.remote': 'Remote',
+      'knowledge.snapshot': 'Snapshot',
+      'knowledge.none': 'Not built',
+      'knowledge.semantic': 'Semantic',
+      'knowledge.structural': 'Structural',
+      'knowledge.structuralOnly': 'Structural index',
+      'knowledge.behind': '{n} commits behind',
+      'knowledge.domains': '{n} domains',
+      'knowledge.checking': 'Checking…',
+      'knowledge.syncStructural': 'Update structural index',
+      'knowledge.syncSemantic': 'Semantic sync',
+      'knowledge.semanticDisabled': 'Semantic sync unavailable: {reason}',
+      'knowledge.missingHint': 'This branch has no knowledge snapshot yet. Build a structural index first.',
+      'knowledge.staleHint': 'The remote has newer commits; the knowledge base needs an update.',
+      'knowledge.currentHint': 'The knowledge base matches the remote tip.',
+      'knowledge.running': 'Syncing…',
+      'knowledge.progress': 'Progress',
+      'knowledge.synced': 'Synced: {sha}',
+      'knowledge.failed': 'Sync failed: {message}',
+      'knowledge.structuralDone': 'Structural index updated: {sha}',
+      'branch.label': 'Branch',
+      'import.title': 'Import project',
+      'import.url': 'Repository URL',
+      'import.urlHint': 'HTTPS URL, e.g. https://gitcode.com/owner/repo',
+      'import.name': 'Project name',
+      'import.nameHint': 'Defaults to the repository name',
+      'import.local': 'Local clone path (optional)',
+      'import.localHint': 'An existing clone avoids a fresh download and must match the URL',
+      'import.branches': 'Branches',
+      'import.probe': 'Read branches',
+      'import.probing': 'Reading…',
+      'import.submit': 'Import',
+      'import.importing': 'Importing…',
+      'import.existing': 'That project was already loaded; opening it.',
+      'import.urlInvalid': 'Enter an HTTPS repository URL',
+      'import.branchRequired': 'Select at least one branch',
+      'import.probeFirst': 'Use “Read branches”, or import with the default branch',
+      'aria.projects': 'Project list',
+      'aria.import': 'Import project dialog',
+      'aria.branch': 'Switch branch',
+      'aria.knowledge': 'Knowledge base status',
+      'aria.close': 'Close',
     };
 
     const CSS = `
@@ -814,16 +932,281 @@ window.__ModuleLoader__.load({
 .rr-page .rr-skeleton-block { height: 120px; margin-top: 16px; border-radius: 10px; background: var(--dsw-alias-bg-layer-2); animation: rr-pulse 1.4s ease-in-out infinite; }
 @keyframes rr-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes rr-pulse { 0%, 100% { opacity: .45; } 50% { opacity: .95; } }
+/* ---- 项目总览 / 导入 / 知识库 ---- */
+.rr-page .rr-landing {
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 20px 32px;
+  background: var(--dsw-alias-bg-base);
+}
+.rr-page .rr-landing-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.rr-page .rr-landing-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.rr-page .rr-landing-sub { margin-top: 2px; color: var(--dsw-alias-label-tertiary); font-size: 11.5px; }
+.rr-page .rr-landing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.rr-page .rr-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  min-width: 0;
+}
+.rr-page .rr-project-card.is-active { border-color: var(--dsw-alias-brand-primary); }
+.rr-page .rr-project-card.has-error { border-color: var(--rr-critical); }
+.rr-page .rr-project-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rr-page .rr-project-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rr-page .rr-project-repo {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.rr-page a.rr-project-repo:hover { color: var(--dsw-alias-link); }
+.rr-page .rr-project-error { color: var(--rr-critical); font-size: 11.5px; overflow-wrap: anywhere; }
+.rr-page .rr-branch-lines { display: flex; flex-direction: column; gap: 2px; }
+.rr-page .rr-branch-line { display: flex; gap: 8px; align-items: baseline; font-size: 11.5px; min-width: 0; }
+.rr-page .rr-branch-name { color: var(--dsw-alias-label-secondary); flex: none; }
+.rr-page .rr-project-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.rr-page .rr-tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.rr-page .rr-tag-brand { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); }
+.rr-page .rr-tag-warn { border-color: var(--rr-high); color: var(--rr-high); }
+.rr-page .rr-btn-primary {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-bg-base);
+}
+.rr-page .rr-btn-primary:hover { background: var(--dsw-alias-brand-primary); opacity: .9; }
+.rr-page .rr-btn-primary:disabled { opacity: .5; }
+.rr-page .rr-skeleton-card { min-height: 132px; }
+.rr-page .rr-skeleton-line { height: 12px; border-radius: 6px; background: var(--dsw-alias-bg-layer-3); animation: rr-pulse 1.4s ease-in-out infinite; }
+.rr-page .rr-skeleton-w40 { width: 40%; }
+.rr-page .rr-skeleton-w60 { width: 60%; }
+.rr-page .rr-skeleton-w80 { width: 80%; }
+.rr-page .rr-workspace {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+.rr-page .rr-knowledge {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.rr-page .rr-knowledge-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rr-page .rr-knowledge-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.rr-page .rr-knowledge-label { font-weight: 600; font-size: 12px; color: var(--dsw-alias-label-primary); }
+.rr-page .rr-knowledge-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-base);
+}
+.rr-page .rr-knowledge-badge.is-current { border-color: #1f9d55; color: #1f9d55; }
+.rr-page .rr-knowledge-badge.is-stale { border-color: var(--rr-high); color: var(--rr-high); }
+.rr-page .rr-knowledge-badge.is-missing { border-color: var(--dsw-alias-border-l2); color: var(--dsw-alias-label-tertiary); }
+.rr-page .rr-knowledge-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  min-width: 0;
+}
+.rr-page .rr-knowledge-hint { color: var(--dsw-alias-label-secondary); }
+.rr-page .rr-knowledge-note { color: var(--rr-high); font-size: 11px; overflow-wrap: anywhere; }
+.rr-page .rr-knowledge-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; justify-content: flex-end; }
+.rr-page .rr-knowledge-notice { flex-basis: 100%; text-align: right; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.rr-page .rr-knowledge-progress {
+  margin-top: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  max-height: 116px;
+  overflow: auto;
+}
+.rr-page .rr-knowledge-progress-label { color: var(--dsw-alias-label-caption); font-size: 10.5px; margin-bottom: 2px; }
+.rr-page .rr-knowledge-progress-line {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.rr-page .rr-notice {
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-link);
+  font-size: 11.5px;
+}
+.rr-page .rr-branch-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  min-height: 28px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+}
+.rr-page .rr-branch-select-icon { display: inline-flex; flex: none; }
+.rr-page .rr-select {
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  min-width: 90px;
+  max-width: 200px;
+  outline: none;
+  cursor: pointer;
+}
+.rr-page .rr-visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+.rr-page .rr-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.rr-page .rr-icon-btn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.rr-page .rr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, .42);
+}
+.rr-page .rr-modal {
+  width: min(560px, 100%);
+  max-height: min(84vh, 720px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+  overflow: hidden;
+}
+.rr-page .rr-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.rr-page .rr-modal-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.rr-page .rr-modal-body { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.rr-page .rr-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.rr-page .rr-field { display: flex; flex-direction: column; gap: 4px; }
+.rr-page .rr-field-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rr-page .rr-field-label { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.rr-page .rr-field-hint { font-size: 10.5px; color: var(--dsw-alias-label-caption); }
+.rr-page .rr-input {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.rr-page .rr-input:hover { border-color: var(--dsw-alias-border-l2); }
+.rr-page .rr-input:focus { border-color: var(--dsw-alias-brand-primary); }
+.rr-page .rr-input::placeholder { color: var(--dsw-alias-label-caption); }
+.rr-page .rr-branch-picker { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow: auto; }
+.rr-page .rr-chip.is-on { background: var(--dsw-alias-bg-layer-3); border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary); }
+.rr-page .rr-form-error { color: var(--rr-critical); font-size: 11.5px; overflow-wrap: anywhere; }
 @media (max-width: 900px) {
   .rr-page .rr-body { grid-template-columns: minmax(0, 1fr); }
   .rr-page .rr-listpane { border-right: 0; }
-  .rr-page[data-view="list"] .rr-detailpane { display: none; }
-  .rr-page[data-view="detail"] .rr-listpane { display: none; }
-  .rr-page[data-view="detail"] .rr-back { display: inline-flex; }
+  .rr-page[data-pane="list"] .rr-detailpane { display: none; }
+  .rr-page[data-pane="detail"] .rr-listpane { display: none; }
+  .rr-page[data-pane="detail"] .rr-back { display: inline-flex; }
   .rr-page .rr-head { padding: 10px 12px; }
   .rr-page .rr-detail-inner { padding: 12px 14px 24px; }
   .rr-page .rr-meta-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rr-page .rr-repo { max-width: 200px; }
+  .rr-page .rr-knowledge { flex-direction: column; }
+  .rr-page .rr-knowledge-actions { justify-content: flex-start; }
+  .rr-page .rr-knowledge-notice { text-align: left; }
+  .rr-page .rr-landing { padding: 14px 12px 24px; }
+  .rr-page .rr-landing-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 560px) {
   .rr-page .rr-head { align-items: flex-start; flex-wrap: wrap; }
@@ -1443,6 +1826,443 @@ window.__ModuleLoader__.load({
       );
     }
 
+    async function postJSON(path, body) {
+      let response;
+      try {
+        response = await fetch(path, {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body || {}),
+        });
+      } catch (error) {
+        throw new Error(errorText(error) || 'Network error');
+      }
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (ignored) {
+        data = null;
+      }
+      if (data && isObject(data) && data.ok === false) {
+        throw new Error(asText(data.error, '') || ('HTTP ' + response.status));
+      }
+      if (!response.ok) {
+        throw new Error(asText(data && data.error, '') || ('HTTP ' + response.status));
+      }
+      return data;
+    }
+
+    function knowledgeStatusKind(knowledge) {
+      if (!isObject(knowledge)) return 'missing';
+      const value = asText(knowledge.freshness, '');
+      if (value === 'current' || value === 'stale' || value === 'missing') return value;
+      return 'missing';
+    }
+
+    function knowledgeStatusLabel(kind, t) {
+      if (kind === 'current') return t('knowledge.status.current');
+      if (kind === 'stale') return t('knowledge.status.stale');
+      return t('knowledge.status.missing');
+    }
+
+    function snapshotLabel(snapshot, t) {
+      if (!isObject(snapshot)) return null;
+      const mode = asText(snapshot.mode, '');
+      const label = mode === 'semantic' ? t('knowledge.semantic') : t('knowledge.structural');
+      return {
+        label: label,
+        sha: shortSha(snapshot.commit),
+        created: snapshot.created_at ? formatDate(snapshot.created_at) : '',
+        domains: Array.isArray(snapshot.refreshed_domains) ? snapshot.refreshed_domains.length : 0,
+      };
+    }
+
+    function ProjectsView(props) {
+      const t = props.t;
+      if (props.loading && !props.projects.length) {
+        return h('div', { className: 'rr-landing' },
+          h('div', { className: 'rr-landing-head' },
+            h('h2', { className: 'rr-landing-title' }, t('view.projects')),
+            h('button', { type: 'button', className: 'rr-btn rr-btn-primary', disabled: true }, t('projects.loading'))
+          ),
+          h('div', { className: 'rr-landing-grid' },
+            [0, 1, 2].map(function (index) { return h(ProjectSkeleton, { key: index }); }))
+        );
+      }
+      if (props.error) {
+        return h('div', { className: 'rr-landing' },
+          h('div', { className: 'rr-landing-head' },
+            h('h2', { className: 'rr-landing-title' }, t('view.projects'))
+          ),
+          h('div', { className: 'rr-state-card' },
+            h(EmptyState, {
+              icon: AlertIcon({ size: 24 }),
+              title: t('projects.errorTitle'),
+              hint: props.error || t('projects.errorHint'),
+              action: h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: props.onRetry }, t('action.retry')),
+            }))
+        );
+      }
+      return h('div', { className: 'rr-landing' },
+        h('div', { className: 'rr-landing-head' },
+          h('div', null,
+            h('h2', { className: 'rr-landing-title' }, t('view.projects')),
+            h('div', { className: 'rr-landing-sub' }, t('projects.emptyHint'))
+          ),
+          h('button', { type: 'button', className: 'rr-btn rr-btn-primary', onClick: props.onImport }, t('action.import'))
+        ),
+        props.projects.length === 0
+          ? h('div', { className: 'rr-state-card' },
+            h(EmptyState, {
+              icon: NavIcon({ size: 26 }),
+              title: t('projects.empty'),
+              hint: t('projects.emptyHint'),
+              action: h('button', { type: 'button', className: 'rr-btn rr-btn-primary', onClick: props.onImport },
+                t('action.import')),
+            }))
+          : h('div', { className: 'rr-landing-grid', role: 'list', 'aria-label': t('aria.projects') },
+            props.projects.map(function (project) {
+              return h(ProjectCard, {
+                key: project.id,
+                project: project,
+                active: project.id === props.activeId,
+                t: t,
+                onOpen: props.onOpen,
+              });
+            }))
+      );
+    }
+
+    function ProjectSkeleton() {
+      return h('div', { className: 'rr-project-card rr-skeleton-card' },
+        h('div', { className: 'rr-skeleton-line rr-skeleton-w60' }),
+        h('div', { className: 'rr-skeleton-line rr-skeleton-w80' }),
+        h('div', { className: 'rr-skeleton-line rr-skeleton-w40' }));
+    }
+
+    function ProjectCard(props) {
+      const t = props.t;
+      const project = isObject(props.project) ? props.project : {};
+      const branches = Array.isArray(project.branches) ? project.branches : [];
+      const snapshots = isObject(project.snapshots) ? project.snapshots : {};
+      const shown = branches.slice(0, 4);
+      const extra = branches.length - shown.length;
+      const branchLines = shown.map(function (ref) {
+        const entry = isObject(snapshots[ref]) ? snapshots[ref] : {};
+        const snapshot = entry.semantic || entry.structural;
+        const info = snapshotLabel(snapshot, t);
+        return h('div', { key: ref, className: 'rr-branch-line' },
+          h('code', { className: 'rr-branch-name' }, ref),
+          h('span', { className: 'rr-muted' }, info
+            ? (info.label + ' ' + info.sha)
+            : t('knowledge.none'))
+        );
+      });
+      const repoUrl = safeHttpUrl(project.repo_url);
+      return h('div', {
+        className: 'rr-project-card' + (props.active ? ' is-active' : '') + (project.error ? ' has-error' : ''),
+        role: 'listitem',
+      },
+        h('div', { className: 'rr-project-card-head' },
+          h('div', { className: 'rr-project-name' }, asText(project.name, asText(project.id, ''))),
+          props.active ? h('span', { className: 'rr-tag rr-tag-brand' }, t('project.active')) : null
+        ),
+        repoUrl
+          ? h('a', { className: 'rr-project-repo', href: repoUrl, target: '_blank', rel: 'noreferrer', title: project.repo_url },
+            asText(project.repo_url, ''))
+          : h('div', { className: 'rr-project-repo' }, asText(project.repo_url, t('common.unknown'))),
+        project.error
+          ? h('div', { className: 'rr-project-error' }, project.error)
+          : h('div', { className: 'rr-branch-lines' }, branchLines),
+        h('div', { className: 'rr-project-card-foot' },
+          h('span', { className: 'rr-muted' }, fill(t('projects.branchCount'), { n: branches.length })),
+          h('button', {
+            type: 'button',
+            className: 'rr-btn rr-btn-sm' + (props.active ? '' : ' rr-btn-primary'),
+            onClick: function () { props.onOpen(project.id); },
+            disabled: Boolean(project.error),
+          }, t('action.open'))
+        )
+      );
+    }
+
+    function BranchSelect(props) {
+      const t = props.t;
+      const branches = Array.isArray(props.branches) ? props.branches : [];
+      const value = asText(props.value, '');
+      const options = branches.length
+        ? branches
+        : (value ? [value] : []);
+      return h('label', { className: 'rr-branch-select', title: t('aria.branch') },
+        h('span', { className: 'rr-branch-select-icon' }, h('svg', {
+          viewBox: '0 0 16 16', width: 13, height: 13, 'aria-hidden': 'true',
+        },
+          h('circle', { cx: 4.5, cy: 4, r: 1.8, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }),
+          h('circle', { cx: 4.5, cy: 12, r: 1.8, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }),
+          h('circle', { cx: 11.5, cy: 8, r: 1.8, fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }),
+          h('path', { d: 'M4.5 5.8v4.4M6.3 4.6c2 0 3.4.6 3.4 3.4', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 })
+        )),
+        h('span', { className: 'rr-visually-hidden' }, t('branch.label')),
+        h('select', {
+          className: 'rr-select',
+          value: value,
+          'aria-label': t('aria.branch'),
+          onChange: function (event) {
+            if (props.onChange) props.onChange(event && event.target ? event.target.value : '');
+          },
+        }, options.map(function (branch) {
+          const name = typeof branch === 'string' ? branch : asText(branch.name, '');
+          const configured = typeof branch === 'string' ? true : branch.configured !== false;
+          return h('option', { key: name, value: name }, configured ? name : name + '（未配置）');
+        }))
+      );
+    }
+
+    function KnowledgeCard(props) {
+      const t = props.t;
+      const knowledge = isObject(props.knowledge) ? props.knowledge : null;
+      const kind = knowledgeStatusKind(knowledge);
+      const snapshot = isObject(knowledge) && isObject(knowledge.snapshot) ? knowledge.snapshot : {};
+      const best = snapshot.semantic || snapshot.structural;
+      const info = snapshotLabel(best, t);
+      const remote = isObject(knowledge) && isObject(knowledge.remote) ? knowledge.remote : {};
+      const remoteSha = shortSha(remote.tip);
+      const behind = numberOr(knowledge && knowledge.behind, 0);
+      const ready = Boolean(knowledge && knowledge.semantic_ready === true);
+      const reason = asText(knowledge && knowledge.semantic_reason, '');
+      const running = Boolean(props.job && props.job.status === 'running');
+      const job = isObject(props.job) ? props.job : null;
+      const progress = job && Array.isArray(job.progress) ? job.progress.slice(-8) : [];
+      const disabled = props.loading || running;
+      const mode = info ? info.label : '';
+      return h('section', { className: 'rr-knowledge', 'aria-label': t('aria.knowledge') },
+        h('div', { className: 'rr-knowledge-main' },
+          h('div', { className: 'rr-knowledge-title' },
+            h('span', { className: 'rr-knowledge-label' }, t('knowledge.title')),
+            h('span', { className: 'rr-knowledge-badge is-' + kind },
+              running ? t('knowledge.running') : knowledgeStatusLabel(kind, t)),
+            info ? h('span', { className: 'rr-tag' }, mode + ' · ' + info.sha) : null,
+            behind > 0 ? h('span', { className: 'rr-tag rr-tag-warn' }, fill(t('knowledge.behind'), { n: behind })) : null
+          ),
+          h('div', { className: 'rr-knowledge-meta' },
+            h('span', null, t('knowledge.remote') + '：' + (remoteSha || t('common.none'))),
+            h('span', null, t('knowledge.snapshot') + '：' + (info ? info.sha + ' · ' + info.created : t('knowledge.none'))),
+            h('span', null, fill(t('knowledge.domains'), {
+              n: knowledge && isObject(knowledge.config) && Array.isArray(knowledge.config.domains)
+                ? knowledge.config.domains.length
+                : 0,
+            })),
+            h('span', { className: 'rr-knowledge-hint' },
+              kind === 'current' ? t('knowledge.currentHint')
+                : kind === 'stale' ? t('knowledge.staleHint')
+                  : t('knowledge.missingHint'))
+          ),
+          !ready && kind !== 'current'
+            ? h('div', { className: 'rr-knowledge-note' },
+              fill(t('knowledge.semanticDisabled'), { reason: reason || t('health.unknown') }))
+            : null,
+          progress.length
+            ? h('div', { className: 'rr-knowledge-progress' },
+              h('div', { className: 'rr-knowledge-progress-label' }, t('knowledge.progress')),
+              progress.map(function (line, index) {
+                return h('div', { key: index, className: 'rr-knowledge-progress-line' }, line);
+              }))
+            : null
+        ),
+        h('div', { className: 'rr-knowledge-actions' },
+          h('button', {
+            type: 'button',
+            className: 'rr-btn rr-btn-sm',
+            onClick: props.onCheck,
+            disabled: disabled,
+            title: t('action.check'),
+          }, t('action.check')),
+          h('button', {
+            type: 'button',
+            className: 'rr-btn rr-btn-sm',
+            onClick: function () { props.onSync('structural'); },
+            disabled: disabled,
+            title: t('knowledge.syncStructural'),
+          }, t('knowledge.syncStructural')),
+          h('button', {
+            type: 'button',
+            className: 'rr-btn rr-btn-sm rr-btn-primary',
+            onClick: function () { props.onSync('semantic'); },
+            disabled: disabled || !ready,
+            title: ready ? t('knowledge.syncSemantic') : fill(t('knowledge.semanticDisabled'), { reason: reason || t('health.unknown') }),
+          }, t('knowledge.syncSemantic')),
+          props.notice ? h('div', { className: 'rr-knowledge-notice' }, props.notice) : null
+        )
+      );
+    }
+
+    function ImportDialog(props) {
+      const t = props.t;
+      const [url, setUrl] = React.useState('');
+      const [name, setName] = React.useState('');
+      const [local, setLocal] = React.useState('');
+      const [branches, setBranches] = React.useState([]);
+      const [selected, setSelected] = React.useState([]);
+      const [probing, setProbing] = React.useState(false);
+      const [importing, setImporting] = React.useState(false);
+      const [error, setError] = React.useState('');
+      const urlRef = React.useRef(null);
+
+      React.useEffect(function () {
+        if (urlRef.current && urlRef.current.focus) urlRef.current.focus();
+        function onKey(event) {
+          if (event && event.key === 'Escape' && props.onClose) props.onClose();
+        }
+        window.addEventListener('keydown', onKey);
+        return function () { window.removeEventListener('keydown', onKey); };
+      }, []);
+
+      const urlValid = /^https:\/\/[^\s]+$/i.test(url.trim());
+
+      async function runProbe() {
+        if (!urlValid) {
+          setError(t('import.urlInvalid'));
+          return;
+        }
+        setProbing(true);
+        setError('');
+        try {
+          let path = API_BASE + '/projects/probe?url=' + encodeURIComponent(url.trim());
+          if (local.trim()) path += '&local=' + encodeURIComponent(local.trim());
+          const data = await fetchJSON(path, undefined);
+          if (!isObject(data) || data.ok === false) throw new Error(asText(data && data.error, '') || 'probe failed');
+          const probeValue = isObject(data.probe) ? data.probe : data;
+          const list = Array.isArray(probeValue.branches) ? probeValue.branches : [];
+          setBranches(list);
+          const defaults = list.filter(function (branch) { return branch.default; }).map(function (branch) { return branch.name; });
+          setSelected(defaults.length ? defaults : (list.length ? [list[0].name] : []));
+          if (!name.trim() && probeValue.name_suggestion) setName(asText(probeValue.name_suggestion, ''));
+        } catch (probeError) {
+          setError(errorText(probeError));
+        } finally {
+          setProbing(false);
+        }
+      }
+
+      async function submit() {
+        if (!urlValid) {
+          setError(t('import.urlInvalid'));
+          return;
+        }
+        if (branches.length && selected.length === 0) {
+          setError(t('import.branchRequired'));
+          return;
+        }
+        setImporting(true);
+        setError('');
+        try {
+          const data = await postJSON(API_BASE + '/projects/import', {
+            url: url.trim(),
+            name: name.trim() || undefined,
+            local: local.trim() || undefined,
+            branches: selected,
+          });
+          if (!isObject(data) || data.ok === false) throw new Error(asText(data && data.error, '') || 'import failed');
+          if (props.onImported) props.onImported(data);
+        } catch (importError) {
+          setError(errorText(importError));
+        } finally {
+          setImporting(false);
+        }
+      }
+
+      function toggleBranch(branchName) {
+        setSelected(function (previous) {
+          if (previous.indexOf(branchName) >= 0) {
+            return previous.filter(function (item) { return item !== branchName; });
+          }
+          return previous.concat([branchName]);
+        });
+      }
+
+      return h('div', {
+        className: 'rr-modal-backdrop',
+        onMouseDown: function (event) {
+          if (event && event.target === event.currentTarget && props.onClose) props.onClose();
+        },
+      },
+        h('div', { className: 'rr-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('aria.import') },
+          h('div', { className: 'rr-modal-head' },
+            h('h2', { className: 'rr-modal-title' }, t('import.title')),
+            h('button', {
+              type: 'button', className: 'rr-icon-btn', onClick: props.onClose,
+              'aria-label': t('aria.close'), title: t('aria.close'),
+            }, '×')
+          ),
+          h('div', { className: 'rr-modal-body' },
+            h('label', { className: 'rr-field' },
+              h('span', { className: 'rr-field-label' }, t('import.url')),
+              h('input', {
+                ref: urlRef,
+                className: 'rr-input',
+                type: 'url',
+                value: url,
+                placeholder: 'https://gitcode.com/owner/repo',
+                onChange: function (event) { setUrl(event && event.target ? event.target.value : ''); setBranches([]); },
+              }),
+              h('span', { className: 'rr-field-hint' }, t('import.urlHint'))
+            ),
+            h('label', { className: 'rr-field' },
+              h('span', { className: 'rr-field-label' }, t('import.name')),
+              h('input', {
+                className: 'rr-input',
+                value: name,
+                placeholder: t('import.nameHint'),
+                onChange: function (event) { setName(event && event.target ? event.target.value : ''); },
+              })
+            ),
+            h('label', { className: 'rr-field' },
+              h('span', { className: 'rr-field-label' }, t('import.local')),
+              h('input', {
+                className: 'rr-input',
+                value: local,
+                placeholder: 'D:\\path\\to\\clone',
+                onChange: function (event) { setLocal(event && event.target ? event.target.value : ''); },
+              }),
+              h('span', { className: 'rr-field-hint' }, t('import.localHint'))
+            ),
+            h('div', { className: 'rr-field' },
+              h('div', { className: 'rr-field-row' },
+                h('span', { className: 'rr-field-label' }, t('import.branches')),
+                h('button', {
+                  type: 'button', className: 'rr-btn rr-btn-sm', onClick: runProbe,
+                  disabled: probing || !urlValid,
+                }, probing ? t('import.probing') : t('import.probe'))
+              ),
+              branches.length
+                ? h('div', { className: 'rr-branch-picker' }, branches.map(function (branch) {
+                  const checked = selected.indexOf(branch.name) >= 0;
+                  return h('button', {
+                    key: branch.name,
+                    type: 'button',
+                    className: 'rr-chip' + (checked ? ' is-on' : ''),
+                    'aria-pressed': checked ? 'true' : 'false',
+                    onClick: function () { toggleBranch(branch.name); },
+                  }, branch.name);
+                }))
+                : h('span', { className: 'rr-field-hint' }, t('import.probeFirst'))
+            ),
+            error ? h('div', { className: 'rr-form-error', role: 'alert' }, error) : null
+          ),
+          h('div', { className: 'rr-modal-foot' },
+            h('button', {
+              type: 'button', className: 'rr-btn', onClick: props.onClose, disabled: importing,
+            }, t('action.cancel')),
+            h('button', {
+              type: 'button', className: 'rr-btn rr-btn-primary', onClick: submit,
+              disabled: importing || !urlValid,
+            }, importing ? t('import.importing') : t('import.submit'))
+          )
+        )
+      );
+    }
+
     function DetailView(props) {
       const t = props.t;
       const detail = isObject(props.detail) ? props.detail : {};
@@ -1602,6 +2422,24 @@ window.__ModuleLoader__.load({
 
     function Page(props) {
       const t = props && typeof props.t === 'function' ? props.t : function (key) { return key; };
+      // ---- 项目与知识库状态 ----
+      const [projects, setProjects] = React.useState([]);
+      const [projectsLoading, setProjectsLoading] = React.useState(true);
+      const [projectsError, setProjectsError] = React.useState('');
+      const [projectsReload, setProjectsReload] = React.useState(0);
+      const [projectId, setProjectId] = React.useState(null);
+      const [view, setView] = React.useState('landing');
+      const [importOpen, setImportOpen] = React.useState(false);
+      const [importNotice, setImportNotice] = React.useState('');
+      const [branches, setBranches] = React.useState([]);
+      const [branch, setBranch] = React.useState('');
+      const [knowledge, setKnowledge] = React.useState(null);
+      const [knowledgeLoading, setKnowledgeLoading] = React.useState(false);
+      const [knowledgeError, setKnowledgeError] = React.useState('');
+      const [knowledgeTick, setKnowledgeTick] = React.useState(0);
+      const [knowledgeNotice, setKnowledgeNotice] = React.useState('');
+      const [syncJob, setSyncJob] = React.useState(null);
+      // ---- PR 列表与详情状态 ----
       const [listData, setListData] = React.useState(null);
       const [listLoading, setListLoading] = React.useState(true);
       const [listError, setListError] = React.useState('');
@@ -1613,17 +2451,141 @@ window.__ModuleLoader__.load({
       const [detailReloadKey, setDetailReloadKey] = React.useState(0);
       const [query, setQuery] = React.useState('');
       const [stateFilter, setStateFilter] = React.useState('all');
-      const [view, setView] = React.useState('list');
+      const [listPane, setListPane] = React.useState('list');
       const [health, setHealth] = React.useState(null);
 
+      // 1) 项目列表：首屏决定落在项目总览还是工作区
       React.useEffect(function () {
+        let active = true;
+        const controller = new AbortController();
+        setProjectsLoading(true);
+        setProjectsError('');
+        (async function () {
+          try {
+            const data = await fetchJSON(API_BASE + '/projects' + (projectsReload > 0 ? '?refresh=1' : ''), controller.signal);
+            if (!active) return;
+            if (!isObject(data)) throw new Error('Invalid response');
+            const items = Array.isArray(data.projects) ? data.projects.filter(isObject) : [];
+            setProjects(items);
+            setProjectId(function (previous) {
+              if (previous && items.some(function (item) { return item.id === previous; })) return previous;
+              const fallback = asText(data.default_project, '');
+              if (fallback && items.some(function (item) { return item.id === fallback; })) return fallback;
+              return items.length === 1 ? items[0].id : previous;
+            });
+            setView(function (previous) {
+              if (previous === 'workspace') return previous;
+              const fallback = asText(data.default_project, '');
+              return fallback ? 'workspace' : 'landing';
+            });
+          } catch (error) {
+            if (!active || controller.signal.aborted) return;
+            setProjectsError(errorText(error));
+          } finally {
+            if (active) setProjectsLoading(false);
+          }
+        })();
+        return function () {
+          active = false;
+          controller.abort();
+        };
+      }, [projectsReload]);
+
+      const activeProject = React.useMemo(function () {
+        for (let index = 0; index < projects.length; index += 1) {
+          if (projects[index].id === projectId) return projects[index];
+        }
+        return null;
+      }, [projects, projectId]);
+
+      // 2) 分支列表：项目切换或知识库刷新后重新读取
+      React.useEffect(function () {
+        if (!projectId) {
+          setBranches([]);
+          setBranch('');
+          return undefined;
+        }
+        let active = true;
+        const controller = new AbortController();
+        (async function () {
+          try {
+            const refresh = knowledgeTick > 0 ? '?refresh=1' : '';
+            const data = await fetchJSON(API_BASE + '/projects/' + encodeURIComponent(projectId) + '/branches' + refresh, controller.signal);
+            if (!active) return;
+            const items = isObject(data) && Array.isArray(data.branches) ? data.branches.filter(isObject) : [];
+            setBranches(items);
+            setBranch(function (previous) {
+              if (previous && items.some(function (item) { return item.name === previous; })) return previous;
+              const project = (function () {
+                for (let index = 0; index < projects.length; index += 1) {
+                  if (projects[index].id === projectId) return projects[index];
+                }
+                return null;
+              })();
+              const configured = project && Array.isArray(project.branches) ? project.branches : [];
+              if (configured.length && items.some(function (item) { return item.name === configured[0]; })) {
+                return configured[0];
+              }
+              const fallback = items.filter(function (item) { return item.default; })[0];
+              return fallback ? fallback.name : (items.length ? items[0].name : '');
+            });
+          } catch (error) {
+            if (!active || controller.signal.aborted) return;
+            setBranches([]);
+          }
+        })();
+        return function () {
+          active = false;
+          controller.abort();
+        };
+      }, [projectId, knowledgeTick]);
+
+      // 3) 知识库状态
+      React.useEffect(function () {
+        if (!projectId || !branch) {
+          setKnowledge(null);
+          return undefined;
+        }
+        let active = true;
+        const controller = new AbortController();
+        setKnowledgeLoading(true);
+        setKnowledgeError('');
+        (async function () {
+          try {
+            const query = '?ref=' + encodeURIComponent(branch) + (knowledgeTick > 0 ? '&refresh=1' : '');
+            const data = await fetchJSON(API_BASE + '/projects/' + encodeURIComponent(projectId) + '/knowledge' + query, controller.signal);
+            if (!active) return;
+            if (isObject(data) && data.error) {
+              setKnowledge(null);
+              setKnowledgeError(asText(data.error, ''));
+              return;
+            }
+            setKnowledge(isObject(data) ? data : null);
+          } catch (error) {
+            if (!active || controller.signal.aborted) return;
+            setKnowledgeError(errorText(error));
+          } finally {
+            if (active) setKnowledgeLoading(false);
+          }
+        })();
+        return function () {
+          active = false;
+          controller.abort();
+        };
+      }, [projectId, branch, knowledgeTick]);
+
+      // 4) PR 列表（按项目）
+      React.useEffect(function () {
+        if (!projectId) return undefined;
         let active = true;
         const controller = new AbortController();
         setListLoading(true);
         setListError('');
         (async function () {
           try {
-            const data = await fetchJSON(API_BASE + '/pulls' + (reloadKey > 0 ? '?refresh=1' : ''), controller.signal);
+            const params = ['project=' + encodeURIComponent(projectId)];
+            if (reloadKey > 0) params.push('refresh=1');
+            const data = await fetchJSON(API_BASE + '/pulls?' + params.join('&'), controller.signal);
             if (!active) return;
             if (!isObject(data)) throw new Error('Invalid response');
             const prs = Array.isArray(data.prs) ? data.prs : [];
@@ -1646,8 +2608,9 @@ window.__ModuleLoader__.load({
           active = false;
           controller.abort();
         };
-      }, [reloadKey]);
+      }, [reloadKey, projectId]);
 
+      // 5) 控制器健康状态
       React.useEffect(function () {
         let active = true;
         const controller = new AbortController();
@@ -1665,10 +2628,11 @@ window.__ModuleLoader__.load({
           active = false;
           controller.abort();
         };
-      }, [reloadKey]);
+      }, []);
 
+      // 6) PR 详情
       React.useEffect(function () {
-        if (selected === null || selected === undefined) {
+        if (selected === null || selected === undefined || !projectId) {
           setDetail(null);
           setDetailError('');
           setDetailLoading(false);
@@ -1681,7 +2645,9 @@ window.__ModuleLoader__.load({
         setDetailLoading(true);
         (async function () {
           try {
-            const data = await fetchJSON(API_BASE + '/pulls/' + encodeURIComponent(String(selected)) + (detailReloadKey > 0 ? '?refresh=1' : ''), controller.signal);
+            const params = ['project=' + encodeURIComponent(projectId)];
+            if (detailReloadKey > 0) params.push('refresh=1');
+            const data = await fetchJSON(API_BASE + '/pulls/' + encodeURIComponent(String(selected)) + '?' + params.join('&'), controller.signal);
             if (!active) return;
             if (!isObject(data)) throw new Error('Invalid response');
             setDetail(data);
@@ -1696,11 +2662,98 @@ window.__ModuleLoader__.load({
           active = false;
           controller.abort();
         };
-      }, [selected, detailReloadKey]);
+      }, [selected, detailReloadKey, projectId]);
+
+      // 7) 知识库同步任务轮询
+      React.useEffect(function () {
+        if (!syncJob || syncJob.status !== 'running') return undefined;
+        let active = true;
+        const timer = setInterval(function () {
+          (async function () {
+            try {
+              const data = await fetchJSON(API_BASE + '/jobs/' + encodeURIComponent(syncJob.job_id), undefined);
+              if (!active || !isObject(data)) return;
+              setSyncJob(data);
+              if (data.status === 'done') {
+                const result = isObject(data.result) ? data.result : {};
+                setKnowledgeNotice(fill(t('knowledge.synced'), { sha: shortSha(result.commit) || shortSha(result.snapshot_id) }));
+                setKnowledgeTick(function (value) { return value + 1; });
+                setProjectsReload(function (value) { return value + 1; });
+              } else if (data.status === 'error') {
+                setKnowledgeNotice(fill(t('knowledge.failed'), { message: asText(data.error, t('health.unknown')) }));
+              }
+            } catch (error) {
+              if (active) setKnowledgeNotice(fill(t('knowledge.failed'), { message: errorText(error) }));
+            }
+          })();
+        }, 1500);
+        return function () {
+          active = false;
+          clearInterval(timer);
+        };
+      }, [syncJob]);
 
       React.useEffect(function () {
-        if (selected === null || selected === undefined) setView('list');
+        if (selected === null || selected === undefined) setListPane('list');
       }, [selected]);
+
+      function openProject(id) {
+        setProjectId(id);
+        setView('workspace');
+        setBranch('');
+        setKnowledge(null);
+        setKnowledgeNotice('');
+        setImportNotice('');
+        setSelected(null);
+        setQuery('');
+        setStateFilter('all');
+        setReloadKey(0);
+      }
+
+      function openImport() {
+        setImportOpen(true);
+      }
+
+      function handleImported(result) {
+        const project = isObject(result) && isObject(result.project) ? result.project : null;
+        setImportOpen(false);
+        setProjectsReload(function (value) { return value + 1; });
+        if (project && project.id) {
+          setImportNotice(result.created === false ? t('import.existing') : '');
+          openProject(project.id);
+        }
+      }
+
+      function checkKnowledge() {
+        setKnowledgeNotice('');
+        setKnowledgeTick(function (value) { return value + 1; });
+        setProjectsReload(function (value) { return value + 1; });
+      }
+
+      async function startSync(mode) {
+        if (!projectId || !branch) return;
+        setKnowledgeNotice('');
+        try {
+          const data = await postJSON(API_BASE + '/projects/' + encodeURIComponent(projectId) + '/knowledge/sync', {
+            ref: branch,
+            mode: mode,
+            fetch: true,
+          });
+          if (!isObject(data) || data.ok === false || !data.job_id) {
+            throw new Error(asText(data && data.error, '') || 'sync failed');
+          }
+          setSyncJob({
+            job_id: data.job_id,
+            status: 'running',
+            progress: [],
+            result: null,
+            error: null,
+            mode: mode,
+          });
+        } catch (error) {
+          setKnowledgeNotice(fill(t('knowledge.failed'), { message: errorText(error) }));
+        }
+      }
 
       const prs = listData && Array.isArray(listData.prs) ? listData.prs.filter(isObject) : [];
       const normalizedQuery = query.trim().toLowerCase();
@@ -1739,7 +2792,7 @@ window.__ModuleLoader__.load({
         : sourceLive ? t('source.live') : t('source.cache');
       const sourceError = listData ? asText(listData.source_error, '') : '';
       const repoObject = listData && isObject(listData.repo) ? listData.repo : {};
-      const repoId = asText(repoObject.id, t('common.unknown'));
+      const repoId = asText(repoObject.id, activeProject ? asText(activeProject.repo_url, t('common.unknown')) : t('common.unknown'));
       const generated = listData && listData.generated_at ? formatDate(listData.generated_at) : t('common.none');
       const activeFilters = normalizedQuery !== '' || stateFilter !== 'all';
 
@@ -1754,7 +2807,7 @@ window.__ModuleLoader__.load({
       function selectPr(number) {
         if (number === null || number === undefined) return;
         setSelected(number);
-        setView('detail');
+        setListPane('detail');
       }
 
       function clearFilters() {
@@ -1763,7 +2816,7 @@ window.__ModuleLoader__.load({
       }
 
       function goBack() {
-        setView('list');
+        setListPane('list');
       }
 
       const listChildren = [];
@@ -1856,88 +2909,132 @@ window.__ModuleLoader__.load({
         detailContent = h(DetailView, { key: String(selected), detail: detail, t: t });
       }
 
-      return h('div', { className: 'rr-page', 'data-view': view },
+      const headerTitle = h('div', { className: 'rr-head-title' },
+        h('span', { className: 'rr-logo' }, NavIcon({ size: 17 })),
+        h('h1', { className: 'rr-title' }, t('title')),
+        activeProject && view === 'workspace'
+          ? h('span', { className: 'rr-repo', title: asText(activeProject.repo_url, '') }, asText(activeProject.name, ''))
+          : h('span', { className: 'rr-repo' }, t('view.projects'))
+      );
+
+      const headerActions = view === 'landing'
+        ? h('div', { className: 'rr-head-actions' },
+          h('button', { type: 'button', className: 'rr-btn rr-btn-primary', onClick: openImport },
+            t('action.import')))
+        : h('div', { className: 'rr-head-actions' },
+          branches.length
+            ? h(BranchSelect, { branches: branches, value: branch, t: t, onChange: setBranch })
+            : null,
+          h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: function () { setView('landing'); } },
+            t('action.backToProjects')),
+          h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: checkKnowledge, disabled: knowledgeLoading },
+            t('action.check')),
+          h('button', {
+            type: 'button',
+            className: 'rr-btn',
+            onClick: refresh,
+            disabled: listLoading,
+            'aria-label': t('aria.refresh'),
+            title: t('aria.refresh'),
+          },
+            h('span', { className: 'rr-icon' + (listLoading ? ' rr-spin' : '') }, RefreshIcon({ size: 14 })),
+            h('span', null, t('action.refresh'))
+          )
+        );
+
+      const metaLine = view === 'workspace'
+        ? h('div', { className: 'rr-head-meta' },
+          h('span', {
+            className: 'rr-source' + (sourceLive ? ' is-live' : ''),
+            title: sourceError || (t('source.label') + ': ' + sourceLabel),
+          },
+            h('span', { className: 'rr-source-dot' }),
+            sourceLabel
+          ),
+          h('span', { className: 'rr-generated' }, t('header.generatedAt') + ' ' + generated)
+        )
+        : null;
+
+      const body = view === 'landing'
+        ? h(ProjectsView, {
+          projects: projects,
+          loading: projectsLoading,
+          error: projectsError,
+          activeId: projectId,
+          t: t,
+          onOpen: openProject,
+          onImport: openImport,
+          onRetry: function () { setProjectsReload(function (value) { return value + 1; }); },
+        })
+        : h('div', { className: 'rr-workspace' },
+          h(KnowledgeCard, {
+            knowledge: knowledge,
+            job: syncJob,
+            loading: knowledgeLoading,
+            notice: knowledgeNotice || (knowledgeError ? fill(t('knowledge.failed'), { message: knowledgeError }) : ''),
+            t: t,
+            onCheck: checkKnowledge,
+            onSync: startSync,
+          }),
+          importNotice ? h('div', { className: 'rr-notice' }, importNotice) : null,
+          h('div', { className: 'rr-body', 'data-pane': listPane },
+            h('aside', { className: 'rr-listpane', 'aria-label': t('aria.prList') },
+              h('div', { className: 'rr-controls' },
+                h('div', { className: 'rr-search-wrap' },
+                  h('span', { className: 'rr-search-icon' }, SearchIcon({ size: 13 })),
+                  h('input', {
+                    type: 'search',
+                    className: 'rr-search',
+                    value: query,
+                    placeholder: t('filter.searchPlaceholder'),
+                    'aria-label': t('filter.searchAria'),
+                    onChange: function (event) { setQuery(event && event.target ? event.target.value : ''); },
+                  })
+                ),
+                h('div', { className: 'rr-chips', role: 'group', 'aria-label': t('aria.filters') },
+                  FILTERS.map(function (filter) {
+                    const pressed = stateFilter === filter.id;
+                    return h('button', {
+                      key: filter.id,
+                      type: 'button',
+                      className: 'rr-chip',
+                      'aria-pressed': pressed ? 'true' : 'false',
+                      onClick: function () { setStateFilter(filter.id); },
+                    }, t(filter.label));
+                  })
+                ),
+                listData ? h('div', { className: 'rr-counts' },
+                  fill(t('list.counts'), { total: totalCount, reviewed: reviewedCount, stale: staleCount })
+                ) : null,
+                sourceError ? h('div', { className: 'rr-cache-warn' },
+                  t('list.cacheWarning') + sourceError
+                ) : null
+              ),
+              h('div', { className: 'rr-list-scroll' }, listChildren)
+            ),
+            h('section', { className: 'rr-detailpane' },
+              h('div', { className: 'rr-detail-inner' },
+                selected !== null && selected !== undefined ? h('button', {
+                  type: 'button',
+                  className: 'rr-btn rr-btn-sm rr-back',
+                  onClick: goBack,
+                  'aria-label': t('detail.back'),
+                }, BackIcon({ size: 13 }), t('detail.back')) : null,
+                detailContent,
+                h(HealthNotice, { health: health, t: t })
+              )
+            )
+          )
+        );
+
+      return h('div', { className: 'rr-page', 'data-view': view, 'data-pane': listPane },
         h('style', { dangerouslySetInnerHTML: { __html: CSS } }),
         h('header', { className: 'rr-head' },
-          h('div', { className: 'rr-head-main' },
-            h('div', { className: 'rr-head-title' },
-              h('span', { className: 'rr-logo' }, NavIcon({ size: 17 })),
-              h('h1', { className: 'rr-title' }, t('title')),
-              h('span', { className: 'rr-repo', title: repoId }, repoId)
-            ),
-            h('div', { className: 'rr-head-meta' },
-              h('span', {
-                className: 'rr-source' + (sourceLive ? ' is-live' : ''),
-                title: sourceError || (t('source.label') + ': ' + sourceLabel),
-              },
-                h('span', { className: 'rr-source-dot' }),
-                sourceLabel
-              ),
-              h('span', { className: 'rr-generated' }, t('header.generatedAt') + ' ' + generated)
-            )
-          ),
-          h('div', { className: 'rr-head-actions' },
-            h('button', {
-              type: 'button',
-              className: 'rr-btn',
-              onClick: refresh,
-              disabled: listLoading,
-              'aria-label': t('aria.refresh'),
-              title: t('aria.refresh'),
-            },
-              h('span', { className: 'rr-icon' + (listLoading ? ' rr-spin' : '') }, RefreshIcon({ size: 14 })),
-              h('span', null, t('action.refresh'))
-            )
-          )
+          h('div', { className: 'rr-head-main' }, headerTitle, metaLine),
+          headerActions
         ),
-        h('div', { className: 'rr-body' },
-          h('aside', { className: 'rr-listpane', 'aria-label': t('aria.prList') },
-            h('div', { className: 'rr-controls' },
-              h('div', { className: 'rr-search-wrap' },
-                h('span', { className: 'rr-search-icon' }, SearchIcon({ size: 13 })),
-                h('input', {
-                  type: 'search',
-                  className: 'rr-search',
-                  value: query,
-                  placeholder: t('filter.searchPlaceholder'),
-                  'aria-label': t('filter.searchAria'),
-                  onChange: function (event) { setQuery(event && event.target ? event.target.value : ''); },
-                })
-              ),
-              h('div', { className: 'rr-chips', role: 'group', 'aria-label': t('aria.filters') },
-                FILTERS.map(function (filter) {
-                  const pressed = stateFilter === filter.id;
-                  return h('button', {
-                    key: filter.id,
-                    type: 'button',
-                    className: 'rr-chip',
-                    'aria-pressed': pressed ? 'true' : 'false',
-                    onClick: function () { setStateFilter(filter.id); },
-                  }, t(filter.label));
-                })
-              ),
-              listData ? h('div', { className: 'rr-counts' },
-                fill(t('list.counts'), { total: totalCount, reviewed: reviewedCount, stale: staleCount })
-              ) : null,
-              sourceError ? h('div', { className: 'rr-cache-warn' },
-                t('list.cacheWarning') + sourceError
-              ) : null
-            ),
-            h('div', { className: 'rr-list-scroll' }, listChildren)
-          ),
-          h('section', { className: 'rr-detailpane' },
-            h('div', { className: 'rr-detail-inner' },
-              selected !== null && selected !== undefined ? h('button', {
-                type: 'button',
-                className: 'rr-btn rr-btn-sm rr-back',
-                onClick: goBack,
-                'aria-label': t('detail.back'),
-              }, BackIcon({ size: 13 }), t('detail.back')) : null,
-              detailContent,
-              h(HealthNotice, { health: health, t: t })
-            )
-          )
-        )
+        body,
+        importOpen ? h(ImportDialog, { t: t, onClose: function () { setImportOpen(false); }, onImported: handleImported }) : null
       );
     }
 

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "default": "recsdk",
+  "projects": [
+    {
+      "id": "recsdk",
+      "name": "RecSDK_for_lingqu",
+      "config": "recsdk.json"
+    }
+  ]
+}

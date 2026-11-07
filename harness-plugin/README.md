@@ -1,8 +1,12 @@
 # RecSDK 代码检视（DSH 插件 bundle）
 
-把 `project-assistant` 的只读检视能力接入 DeepSeek Harness Web UI：侧栏新增「代码检视」整页，
-列出 GitCode 上 RecSDK 仓库的当前 Pull Request，选中后显示该 PR 的 AI 审查意见（严重度、
-触发条件、系统影响、证据 `path:line`、验证方法、覆盖缺口）以及"审查是否基于最新提交"。
+把 `project-assistant` 接入 DeepSeek Harness Web UI：侧栏「代码检视」整页。页面是一个项目控制台：
+
+- **项目总览**：列出已加载项目；支持导入未加载项目（HTTPS 仓库地址 + 可选本地 clone + 分支多选）。
+- **工作区**：切换分支；知识库卡片显示 未构建 / 有更新 / 已最新（远端 tip vs 快照提交、落后提交数），
+  可「检查更新」「更新结构索引」「语义同步」，同步过程展示流式进度。
+- **PR 检视**：当前项目的 GitCode PR 列表；选中后显示 AI 审查意见（严重度、触发条件、系统影响、
+  证据 `path:line`、验证方法、覆盖缺口）与"审查是否基于最新提交"。
 
 ## 组成
 
@@ -52,8 +56,28 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | --- | --- | --- |
 | `projectRoot` | `D:\GRVLLM\ReviewWork\project-assistant` | 控制器工程目录 |
 | `python` | `<projectRoot>\.venv\Scripts\python.exe` | 控制器解释器（缺失时回退 PATH 的 `python`） |
-| `configFile` | `<projectRoot>\config\recsdk.json` | 控制器配置 |
-| `cliTimeoutMs` | `120000` | 单次 CLI 调用上限 |
+| `configFile` | `<projectRoot>\config\recsdk.json` | 默认项目配置（`--project` 优先） |
+| `cliTimeoutMs` | `120000` | 普通命令上限（列表/详情/状态） |
+| `syncTimeoutMs` | `1800000` | 知识库构建任务上限（首次构建可能较久） |
+
+## HTTP 接口（同源）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/recsdk-review/api/projects` | 项目列表 + 各分支快照指针 |
+| GET | `/recsdk-review/api/projects/probe?url=&local=` | 探测远端/本地分支 |
+| POST | `/recsdk-review/api/projects/import` | 导入项目 `{url,name,local,branches}` |
+| GET | `/recsdk-review/api/projects/<id>/branches?refresh=1` | 分支列表 |
+| GET | `/recsdk-review/api/projects/<id>/knowledge?ref=&refresh=1` | 知识库状态 |
+| POST | `/recsdk-review/api/projects/<id>/knowledge/sync` | 启动构建 `{ref,mode,fetch}` → `{job_id}` |
+| GET | `/recsdk-review/api/jobs/<jobId>` | 构建进度与结果 |
+| GET | `/recsdk-review/api/pulls?project=` | PR 列表（`offline=1` / `refresh=1`） |
+| GET | `/recsdk-review/api/pulls/<number>?project=` | PR 详情与审查结果 |
+| GET | `/recsdk-review/api/health` | 控制器健康状态 |
+
+## Agent 工具
+
+`recsdk_projects`、`recsdk_knowledge_status`、`recsdk_pr_list`、`recsdk_pr_review`、`recsdk_review_health`。
 
 ## 卸载
 

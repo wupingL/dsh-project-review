@@ -12,6 +12,8 @@ from .context import Context
 from .feature import Features
 from .gitcode import GitCode
 from .inspect import list_pulls, show_pull
+from .projects import (import_project, knowledge_status, list_projects, probe,
+                       project_branches, resolve_config, sync_knowledge)
 from .review import Reviews
 
 
@@ -53,9 +55,33 @@ def main(argv=None):
     sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Shared project knowledge and system-level review")
     parser.add_argument("--config", default=str(ROOT / "config/recsdk.json"))
+    parser.add_argument("--project", help="注册表里的项目 id；优先于 --config")
     commands = parser.add_subparsers(dest="command", required=True)
     health = commands.add_parser("doctor")
     health.add_argument("--network", action="store_true")
+    project = commands.add_parser("project").add_subparsers(dest="action", required=True)
+    project.add_parser("list")
+    probe_cmd = project.add_parser("probe")
+    probe_cmd.add_argument("--url", required=True)
+    probe_cmd.add_argument("--local")
+    import_cmd = project.add_parser("import")
+    import_cmd.add_argument("--name")
+    import_cmd.add_argument("--url", required=True)
+    import_cmd.add_argument("--local")
+    import_cmd.add_argument("--branches", default="")
+    branches_cmd = project.add_parser("branches")
+    branches_cmd.add_argument("--id", required=True)
+    branches_cmd.add_argument("--refresh", action="store_true")
+    knowledge = commands.add_parser("knowledge").add_subparsers(dest="action", required=True)
+    kstatus = knowledge.add_parser("status")
+    kstatus.add_argument("--id", required=True)
+    kstatus.add_argument("--ref", required=True)
+    kstatus.add_argument("--refresh", action="store_true")
+    ksync = knowledge.add_parser("sync")
+    ksync.add_argument("--id", required=True)
+    ksync.add_argument("--ref", required=True)
+    ksync.add_argument("--structural", action="store_true")
+    ksync.add_argument("--fetch", action="store_true")
     context = commands.add_parser("context").add_subparsers(dest="action", required=True)
     sync = context.add_parser("sync")
     sync.add_argument("--ref", required=True)
@@ -91,7 +117,29 @@ def main(argv=None):
         phase.add_argument("--task", required=True)
     args = parser.parse_args(argv)
     try:
-        config = Config(args.config)
+        if args.command == "project":
+            if args.action == "list":
+                result = list_projects()
+            elif args.action == "probe":
+                result = probe(args.url, args.local)
+            elif args.action == "import":
+                selected = [branch.strip() for branch in (args.branches or "").split(",") if branch.strip()]
+                result = import_project(args.name, args.url, args.local, selected)
+            else:
+                result = project_branches(args.id, refresh=args.refresh)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "knowledge":
+            if args.action == "status":
+                result = knowledge_status(args.id, args.ref, refresh=args.refresh)
+            else:
+                result = sync_knowledge(args.id, args.ref,
+                                        mode="structural" if args.structural else "semantic",
+                                        fetch=args.fetch,
+                                        progress=lambda kind, message: print(message, file=sys.stderr, flush=True))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        config = resolve_config(args.config, args.project)[0]
         if args.command == "doctor":
             result = doctor(config, args.network)
         elif args.command == "context":

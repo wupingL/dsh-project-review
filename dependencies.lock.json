@@ -1,0 +1,4 @@
+{
+  "understand": {"repo": "https://github.com/Egonex-AI/Understand-Anything", "commit": "4e6d3299017a7432da15957874992837a315c5b4", "license": "MIT"},
+  "experts": {"repo": "https://github.com/Jeffallan/claude-skills", "commit": "078a25cc5bfd8011459be7b91d004e900c1d02d3", "license": "MIT", "skills": ["spec-miner", "architecture-designer", "code-reviewer"]}
+}

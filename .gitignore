@@ -1,0 +1,6 @@
+data/
+worktrees/
+vendor/
+.venv/
+__pycache__/
+*.egg-info/

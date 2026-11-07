@@ -11,6 +11,7 @@ from .common import ROOT, Config, read_json, run
 from .context import Context
 from .feature import Features
 from .gitcode import GitCode
+from .inspect import list_pulls, show_pull
 from .review import Reviews
 
 
@@ -74,6 +75,11 @@ def main(argv=None):
     replay.add_argument("--structural-only", action="store_true")
     watch = review.add_parser("watch")
     watch.add_argument("--once", action="store_true")
+    listing = review.add_parser("list")
+    listing.add_argument("--offline", action="store_true")
+    show = review.add_parser("show")
+    show.add_argument("--pr", type=int, required=True)
+    show.add_argument("--offline", action="store_true")
     review.add_parser("status")
     feature = commands.add_parser("feature").add_subparsers(dest="action", required=True)
     design = feature.add_parser("design")
@@ -102,37 +108,42 @@ def main(argv=None):
                     raise ValueError("No snapshot for this ref; run context sync first")
                 result = ctx.query(sid, args.query, args.path)
         elif args.command == "review":
-            reviews = Reviews(config)
-            if args.action == "status":
-                result = [dict(r) for r in reviews.state.db.execute("SELECT id,number,status,attempts,error,report FROM jobs ORDER BY updated DESC")]
+            if args.action == "list":
+                result = list_pulls(config, offline=args.offline)
+            elif args.action == "show":
+                result = show_pull(config, args.pr, offline=args.offline)
             else:
-                health = doctor(config, network=args.action != "replay")
-                if args.action == "replay" and args.structural_only:
-                    health["ready"] = health["checks"]["understand_core"] and health["checks"]["git"] and health["checks"]["node"]
-                if not health["ready"]:
-                    print(json.dumps(health, ensure_ascii=False, indent=2))
-                    return 2
-                if args.action == "watch":
-                    reviews.watch(args.once)
-                    return 0
-                if args.action == "replay":
-                    result = reviews.replay(args.branch, args.commit, structural_only=args.structural_only)
-                    print(json.dumps(result, ensure_ascii=False, indent=2))
-                    return 0
-                with reviews.state.lock("watch"):
-                    reviews.state.recover()
-                    reviews.git.refresh()
-                    pr = reviews.api.pull(args.pr)
-                    if not reviews.api.active(pr):
-                        raise ValueError("PR must be open and not draft")
-                    reviews.observe([pr], force=True)
-                    job = reviews.job(pr)
-                    row = reviews.state.db.execute("SELECT status,report FROM jobs WHERE id=?", (job["fingerprint"],)).fetchone()
-                    if row["status"] == "done":
-                        result = {"report": row["report"], "reused": True}
-                    else:
-                        # Explicit run selects this PR, not a different queued job.
-                        result = reviews.process_one(job["fingerprint"])
+                reviews = Reviews(config)
+                if args.action == "status":
+                    result = [dict(r) for r in reviews.state.db.execute("SELECT id,number,status,attempts,error,report FROM jobs ORDER BY updated DESC")]
+                else:
+                    health = doctor(config, network=args.action != "replay")
+                    if args.action == "replay" and args.structural_only:
+                        health["ready"] = health["checks"]["understand_core"] and health["checks"]["git"] and health["checks"]["node"]
+                    if not health["ready"]:
+                        print(json.dumps(health, ensure_ascii=False, indent=2))
+                        return 2
+                    if args.action == "watch":
+                        reviews.watch(args.once)
+                        return 0
+                    if args.action == "replay":
+                        result = reviews.replay(args.branch, args.commit, structural_only=args.structural_only)
+                        print(json.dumps(result, ensure_ascii=False, indent=2))
+                        return 0
+                    with reviews.state.lock("watch"):
+                        reviews.state.recover()
+                        reviews.git.refresh()
+                        pr = reviews.api.pull(args.pr)
+                        if not reviews.api.active(pr):
+                            raise ValueError("PR must be open and not draft")
+                        reviews.observe([pr], force=True)
+                        job = reviews.job(pr)
+                        row = reviews.state.db.execute("SELECT status,report FROM jobs WHERE id=?", (job["fingerprint"],)).fetchone()
+                        if row["status"] == "done":
+                            result = {"report": row["report"], "reused": True}
+                        else:
+                            # Explicit run selects this PR, not a different queued job.
+                            result = reviews.process_one(job["fingerprint"])
         else:
             features = Features(config)
             if args.action == "design":

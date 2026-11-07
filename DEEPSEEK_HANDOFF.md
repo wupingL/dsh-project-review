@@ -94,3 +94,26 @@ Harness 官方文档提供 Cordis 插件与 bundle 安装机制。先记录目�
 
 官方参考（以目标安装版本为准）：[DeepSeek Harness](https://deepseek.com/harness/)、[打包与安装](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md)、[宿主模型服务](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/llm/llm/README.md)、[工具注册与执行](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/tools.md)、[内置插件开发指引](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/preset/agent-preset/skills/cordis-plugin-development/SKILL.md)。
 
+## 6. 插件进展：阶段 A 已交付（2026-11-07，DSH 0.2.2-rc.1 / desktop profile）
+
+按"先让页面在控制器现有数据上可验收，再接宿主模型桥"的顺序执行。阶段 A 已完成并安装到本机 `desktop` profile；阶段 B（Harness 模型桥）未开始。
+
+| 交付物 | 位置 | 状态 |
+| --- | --- | --- |
+| 可安装 bundle（bundle patch + host 半身 + Web UI 整页 + 图标/locale） | [harness-plugin/](harness-plugin/) | 已安装（`@local/recsdk-review`，link 方式），`application: applied`，无 warning |
+| 只读检视面（PR 列表 / PR 详情 / 审查意见投影） | [project_assistant/inspect.py](project_assistant/inspect.py)、[cli.py](project_assistant/cli.py) 的 `review list` / `review show --pr N [--offline]` | 已完成；新增测试见 [tests/test_inspect.py](tests/test_inspect.py) |
+| Web UI 入口 | `main` slot key `recsdk-review` + `sidebar.panellist` 行（「代码检视」整页） | 已在运行中的页面注册（通过 Slots 检查确认在册） |
+| 同源 HTTP 路由 | `GET /recsdk-review/api/pulls`、`/pulls/<number>`、`/health` | 已注册 |
+| Agent 工具 | `recsdk_pr_list`、`recsdk_pr_review`、`recsdk_review_health` | 已注册并实测调用成功（真实 GitCode，7 个 open PR） |
+| 无安装依赖的 Host 冒烟测试 | [scripts/verify_harness_plugin.mjs](scripts/verify_harness_plugin.mjs) | 18/18 通过（假 ctx + 假控制器） |
+| 安装后端到端核验脚本 | [scripts/verify_bundle_installed.mjs](scripts/verify_bundle_installed.mjs) | 需要浏览器会话的鉴权 URL，见下方限制 |
+
+阶段 A 的边界：页面只读（刷新列表、查看已有审查结果），**不能**在页面上发起审查、评论、审批或合并；控制器当前直连模型配置仍未就绪，因此真实 PR 目前显示"未审查"，这是真实状态。下一步（阶段 B）仍是本文件 §3.2 的宿主模型桥：插件经宿主 `llm` 服务执行语义审查，控制器记录实际路由身份，页面增加"发起/重跑审查"。
+
+阶段 A 的限制与未覆盖项：
+
+- 页面视觉呈现（布局、暗色主题、交互）需要在已连接的 Harness 页面人工确认；仅注册成功不等于观感正确。
+- 本机 `dsh web` 的 HTTP 端口要求浏览器会话鉴权（直接请求返回 401），因此后端到端 HTTP 核验只能通过宿主工具调用、Slots/Config 检查与人工页面确认完成。
+- 真实模型审查未运行：知识快照与报告仍为旧身份（Codex 时期），切换路由后按 §2 的规则需要重算语义领域。
+
+

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Code review",
+    "description": "Lists current pull requests of the RecSDK repository and shows each one's AI review findings and evidence."
+  }
+}

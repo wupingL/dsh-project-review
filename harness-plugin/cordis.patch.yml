@@ -1,0 +1,12 @@
+# RecSDK 代码检视 bundle 的装载补丁。
+# 行名必须是裸包名，浏览器半身由 package.json 的 dsh.client 绑定到这一行。
+- insert:
+    - id: recsdk-review
+      name: '@local/recsdk-review'
+      config:
+        # 控制器所在的工程目录（Python project-assistant）。
+        projectRoot: 'D:\GRVLLM\ReviewWork\project-assistant'
+        # 控制器解释器；留空则使用 <projectRoot>\.venv\Scripts\python.exe。
+        python: 'D:\GRVLLM\ReviewWork\project-assistant\.venv\Scripts\python.exe'
+        # 控制器 CLI 单次调用上限（毫秒）。
+        cliTimeoutMs: 120000

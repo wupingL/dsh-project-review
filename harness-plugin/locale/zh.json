@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "代码检视",
+    "description": "展示 GitCode 上 RecSDK 仓库的当前 Pull Request，并查看每个 PR 的 AI 审查意见与证据。"
+  }
+}

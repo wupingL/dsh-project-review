@@ -1944,10 +1944,20 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots', 'locale'],
       apply(ctx) {
-        ctx.effect(() => ctx.locale.register(NS, 'zh', ZH), 'recsdk-review: zh dictionary');
-        ctx.effect(() => ctx.locale.register(NS, 'en', EN), 'recsdk-review: en dictionary');
+        // 内置 locale id 通常是 zh/en 裸标签，但浏览器或偏好可能给出 zh-CN/zh-Hans；
+        // 对候选标签都注册，命中哪个都能中文显示，重复或非法标签忽略即可。
+        for (const tag of ['zh', 'zh-CN', 'zh-Hans', 'zh-Hant']) {
+          ctx.effect(() => {
+            try { return ctx.locale.register(NS, tag, ZH); } catch (error) { return () => {}; }
+          }, 'recsdk-review: zh dictionary ' + tag);
+        }
+        for (const tag of ['en', 'en-US']) {
+          ctx.effect(() => {
+            try { return ctx.locale.register(NS, tag, EN); } catch (error) { return () => {}; }
+          }, 'recsdk-review: en dictionary ' + tag);
+        }
         let t = (key) => key;
-        try { t = ctx.locale.bind(NS); } catch {}
+        try { t = ctx.locale.bind(NS); } catch { t = (key) => key; }
         ctx.slots.inject('main', () => ctx.slots.register(
           { name: 'main', key: PANEL_ID, locale: NS, inject: () => ({ t }) },
           (props) => Page({ ...props, t })

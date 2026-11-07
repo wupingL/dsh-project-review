@@ -12,9 +12,9 @@ from .context import Context
 from .feature import Features
 from .gitcode import GitCode
 from .inspect import list_pulls, show_pull
-from .projects import (import_project, knowledge_status, list_projects, model_set,
-                       model_set_credential, model_show, probe, project_branches,
-                       resolve_config, sync_knowledge)
+from .projects import (import_project, knowledge_status, list_projects, model_apply,
+                       model_set, model_set_credential, model_show, model_test, probe,
+                       project_branches, resolve_config, sync_knowledge)
 from .review import Reviews
 
 
@@ -100,6 +100,16 @@ def main(argv=None):
     mcred.add_argument("--key-stdin", action="store_true",
                        help="从标准输入读取 API Key（避免出现在进程参数里）")
     mcred.add_argument("--clear", action="store_true")
+    mapply = model.add_parser("apply")
+    mapply.add_argument("--id", required=True)
+    mapply.add_argument("--provider", required=True, choices=["deepseek", "codex"])
+    mapply.add_argument("--model", required=True)
+    mapply.add_argument("--base-url")
+    mapply.add_argument("--endpoint-id")
+    mapply.add_argument("--credential-env")
+    mapply.add_argument("--key-stdin", action="store_true")
+    mtest = model.add_parser("test")
+    mtest.add_argument("--id", required=True)
     context = commands.add_parser("context").add_subparsers(dest="action", required=True)
     sync = context.add_parser("sync")
     sync.add_argument("--ref", required=True)
@@ -165,6 +175,13 @@ def main(argv=None):
                 if args.key_stdin and not args.clear:
                     secret = sys.stdin.readline().strip()
                 result = model_set_credential(args.id, api_key=secret, clear=args.clear)
+            elif args.action == "apply":
+                secret = sys.stdin.readline().strip() if args.key_stdin else None
+                result = model_apply(args.id, provider=args.provider, model=args.model,
+                                     base_url=args.base_url, endpoint_id=args.endpoint_id,
+                                     credential_env=args.credential_env, api_key=secret)
+            elif args.action == "test":
+                result = model_test(args.id)
             else:
                 result = model_set(args.id, provider=args.provider, model=args.model,
                                    base_url=args.base_url, endpoint_id=args.endpoint_id,

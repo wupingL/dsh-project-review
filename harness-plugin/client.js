@@ -214,6 +214,13 @@ window.__ModuleLoader__.load({
       'settings.present': '已提供',
       'settings.missing': '缺失',
       'settings.harnessUnavailable': 'Harness 模型清单不可用：{reason}',
+      'settings.noProvider': '当前 Harness 配置里没有可用于控制器的提供方（需要 OpenAI 兼容 base_url + 模型列表）',
+      'settings.apply': '保存并启用',
+      'settings.test': '测试连接',
+      'settings.testOk': '连接正常：{n} 个模型，{ms} ms',
+      'settings.testFailed': '连接失败',
+      'settings.testSkipped': '未测试',
+      'settings.keyAlready': '已保存（留空则不修改）',
       'settings.back': '返回',
       'settings.incompatibleHint': '该提供方未提供 OpenAI 兼容地址，请手动填写',
       'settings.apiKey': 'API Key（仅此项需要填写）',
@@ -427,6 +434,13 @@ window.__ModuleLoader__.load({
       'settings.present': 'present',
       'settings.missing': 'missing',
       'settings.harnessUnavailable': 'Harness model catalog unavailable: {reason}',
+      'settings.noProvider': 'No provider in the Harness configuration is usable by the controller (needs an OpenAI-compatible base URL plus models)',
+      'settings.apply': 'Save and enable',
+      'settings.test': 'Test connection',
+      'settings.testOk': 'Connected: {n} models in {ms} ms',
+      'settings.testFailed': 'Connection failed',
+      'settings.testSkipped': 'Not tested',
+      'settings.keyAlready': 'Saved (empty keeps it)',
       'settings.back': 'Back',
       'settings.incompatibleHint': 'This provider exposes no OpenAI-compatible base URL; enter one manually',
       'settings.apiKey': 'API key (the only field you need to fill)',
@@ -2418,18 +2432,12 @@ window.__ModuleLoader__.load({
       const t = props.t;
       const [loading, setLoading] = React.useState(true);
       const [error, setError] = React.useState('');
-      const [harness, setHarness] = React.useState(null);
-      const [config, setConfig] = React.useState(null);
-      const [provider, setProvider] = React.useState('deepseek');
+      const [providers, setProviders] = React.useState([]);
+      const [provider, setProvider] = React.useState('');
       const [model, setModel] = React.useState('');
-      const [baseUrl, setBaseUrl] = React.useState('');
-      const [endpointId, setEndpointId] = React.useState('');
-      const [credentialEnv, setCredentialEnv] = React.useState('DEEPSEEK_API_KEY');
-      const [saving, setSaving] = React.useState(false);
-      const [message, setMessage] = React.useState('');
       const [apiKey, setApiKey] = React.useState('');
-      const [savingKey, setSavingKey] = React.useState(false);
-      const [keyMessage, setKeyMessage] = React.useState('');
+      const [saving, setSaving] = React.useState(false);
+      const [result, setResult] = React.useState(null);
 
       React.useEffect(function () {
         let active = true;
@@ -2438,47 +2446,25 @@ window.__ModuleLoader__.load({
           setLoading(true);
           setError('');
           try {
-            const results = await Promise.all([
+            const values = await Promise.all([
               fetchJSON(API_BASE + '/harness-models', controller.signal).catch(function () { return null; }),
-              fetchJSON(API_BASE + '/model-config?project=' + encodeURIComponent(String(props.projectId || '')), controller.signal),
+              fetchJSON(API_BASE + '/model-config?project=' + encodeURIComponent(String(props.projectId || '')), controller.signal)
+                .catch(function () { return null; }),
             ]);
             if (!active) return;
-            const harnessValue = isObject(results[0]) ? results[0] : null;
-            const configValue = isObject(results[1]) ? results[1] : null;
-            setHarness(harnessValue);
-            setConfig(configValue);
-            const available = harnessValue && Array.isArray(harnessValue.providers)
-              ? harnessValue.providers.filter(isObject)
-              : [];
-            const saved = configValue && isObject(configValue.model_backend) ? configValue.model_backend : {};
+            const catalog = isObject(values[0]) && Array.isArray(values[0].providers) ? values[0].providers : [];
+            const usable = catalog.filter(function (item) {
+              return isObject(item) && item.base_url && Array.isArray(item.models) && item.models.length > 0;
+            });
+            const saved = isObject(values[1]) && isObject(values[1].model_backend) ? values[1].model_backend : {};
             const savedProvider = asText(saved.provider, '');
             const savedModel = asText(saved.model, '');
-            const savedBase = asText(saved.base_url, '');
-            const savedEndpoint = asText(saved.endpoint_id, '');
-            const savedEnv = asText(saved.credential_env, '');
-            const usable = available.filter(function (item) {
-              return Array.isArray(item.models) && item.models.length > 0;
-            });
-            // 保存的路由有效时沿用；否则优先挑一个带 OpenAI 兼容地址的提供方，自动补全其余字段。
-            let chosen = available.filter(function (item) { return item.id === savedProvider; })[0] || null;
-            if (!chosen || !savedBase || !savedModel) {
-              const preferred = usable.filter(function (item) { return item.open_ai_compatible === true; })[0]
-                || usable[0]
-                || available[0]
-                || null;
-              if (preferred) chosen = preferred;
-            }
-            const fallbackBase = chosen && chosen.base_url ? asText(chosen.base_url, '') : '';
-            const fallbackModel = chosen && Array.isArray(chosen.models) && chosen.models.length
-              ? asText(chosen.models[0].id, '')
-              : '';
-            const fallbackEnv = chosen && chosen.credential_env ? asText(chosen.credential_env, '') : '';
-            setProvider(chosen ? chosen.id : (savedProvider || 'deepseek'));
-            setModel(savedModel || fallbackModel);
-            setBaseUrl(savedBase || fallbackBase);
-            // 'pending-deployment' 只是占位；留空让控制器按 base_url 主机名推导。
-            setEndpointId(savedEndpoint === 'pending-deployment' ? '' : savedEndpoint);
-            setCredentialEnv(savedEnv || fallbackEnv || 'DEEPSEEK_API_KEY');
+            const matched = usable.filter(function (item) { return item.id === savedProvider; })[0] || null;
+            const chosen = matched || usable[0] || null;
+            setProviders(usable);
+            setProvider(chosen ? chosen.id : savedProvider);
+            setModel(savedModel || (chosen && chosen.models.length ? asText(chosen.models[0].id, '') : ''));
+            if (isObject(values[1])) setResult(values[1]);
           } catch (loadError) {
             if (!active || controller.signal.aborted) return;
             setError(errorText(loadError));
@@ -2492,132 +2478,53 @@ window.__ModuleLoader__.load({
         };
       }, [props.projectId]);
 
-      const providers = harness && Array.isArray(harness.providers) ? harness.providers.filter(isObject) : [];
-      const currentProvider = providers.filter(function (item) { return item.id === provider; })[0] || null;
-      const models = currentProvider && Array.isArray(currentProvider.models) ? currentProvider.models : [];
-      const destination = config && isObject(config.destination) ? config.destination : {};
-      const checks = config && isObject(config.checks) ? config.checks : {};
-      const errors = config && isObject(config.errors) ? config.errors : {};
-      const ready = Boolean(config && config.ready === true);
+      const current = providers.filter(function (item) { return item.id === provider; })[0] || null;
+      const models = current && Array.isArray(current.models) ? current.models : [];
+      const ready = Boolean(result && result.ready === true);
+      const checks = result && isObject(result.checks) ? result.checks : {};
+      const errors = result && isObject(result.errors) ? result.errors : {};
+      const destination = result && isObject(result.destination) ? result.destination : {};
       const credential = isObject(destination.credential) ? destination.credential : {};
+      const test = result && isObject(result.test) ? result.test : null;
+      const firstError = Object.keys(errors).length ? asText(errors[Object.keys(errors)[0]], '') : '';
 
       function chooseProvider(nextProvider) {
         setProvider(nextProvider);
-        setMessage('');
         const found = providers.filter(function (item) { return item.id === nextProvider; })[0];
-        if (!found) return;
-        if (!baseUrl && found.base_url) setBaseUrl(asText(found.base_url, ''));
-        if (found.credential_env) setCredentialEnv(asText(found.credential_env, ''));
-        const firstModel = Array.isArray(found.models) && found.models.length ? found.models[0].id : '';
-        if (firstModel && !models.some(function (item) { return item.id === model; })) setModel(firstModel);
+        if (found && Array.isArray(found.models) && found.models.length) setModel(asText(found.models[0].id, ''));
       }
 
-      function chooseModel(nextModel) {
-        setModel(nextModel);
-        setMessage('');
-      }
-
-      async function reloadConfig() {
-        try {
-          const data = await fetchJSON(API_BASE + '/model-config?project=' + encodeURIComponent(String(props.projectId || '')), undefined);
-          if (isObject(data)) setConfig(data);
-        } catch (ignored) {
-          /* 保留旧状态，由 message 提示 */
-        }
-      }
-
-      async function saveRoute() {
-        if (!model.trim()) {
-          setMessage(t('settings.needModel'));
-          return false;
-        }
-        if (!baseUrl.trim()) {
-          setMessage(t('settings.needBaseUrl'));
-          return false;
-        }
-        const data = await postJSON(API_BASE + '/model-config', {
-          project: props.projectId,
-          provider: provider,
-          model: model.trim(),
-          base_url: baseUrl.trim(),
-          endpoint_id: endpointId.trim() || undefined,
-          protocol: 'chat_completions',
-          credential_env: credentialEnv.trim() || undefined,
-        });
-        if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
-        if (isObject(data)) setConfig(data);
-        return true;
-      }
-
-      /** 主按钮：先保存路由，再（如有输入）保存 API Key，最后回读真实就绪状态。 */
-      async function saveAll(requireKey) {
-        if (requireKey && !apiKey.trim()) {
-          setKeyMessage(t('settings.apiKey'));
+      async function apply() {
+        if (!provider || !model) {
+          setResult(function (previous) {
+            return { ...(isObject(previous) ? previous : {}), error: t('settings.needModel') };
+          });
           return;
         }
         setSaving(true);
-        setSavingKey(true);
-        setMessage('');
-        setKeyMessage('');
+        setError('');
         try {
-          const savedRoute = await saveRoute();
-          if (!savedRoute) return;
-          if (apiKey.trim()) {
-            const data = await postJSON(API_BASE + '/model-config/credential', {
-              project: props.projectId,
-              api_key: apiKey.trim(),
-            });
-            if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
-            setApiKey('');
-            setKeyMessage(t('settings.keySaved'));
-          }
-          await reloadConfig();
-          setMessage(t('settings.saved'));
-        } catch (saveError) {
-          const text = errorText(saveError);
-          setMessage(text);
-          setKeyMessage(text);
-        } finally {
-          setSaving(false);
-          setSavingKey(false);
-        }
-      }
-
-      async function saveCredential(clear) {
-        if (!clear && !apiKey.trim()) {
-          setKeyMessage(t('settings.apiKey'));
-          return;
-        }
-        setSavingKey(true);
-        setKeyMessage('');
-        try {
-          const data = await postJSON(API_BASE + '/model-config/credential', {
+          const data = await postJSON(API_BASE + '/model-config/apply', {
             project: props.projectId,
-            api_key: clear ? undefined : apiKey.trim(),
-            clear: clear === true,
+            provider: provider,
+            model: model,
+            base_url: current && current.base_url ? current.base_url : undefined,
+            credential_env: current && current.credential_env ? current.credential_env : undefined,
+            api_key: apiKey.trim() || undefined,
           });
           if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
           if (isObject(data)) {
-            setConfig(function (previous) {
-              if (!isObject(previous)) return previous;
-              return {
-                ...previous,
-                ready: data.ready === true,
-                checks: isObject(data.checks) ? data.checks : previous.checks,
-                errors: isObject(data.errors) ? data.errors : previous.errors,
-                destination: {
-                  ...(isObject(previous.destination) ? previous.destination : {}),
-                  credential: isObject(data.credential) ? data.credential : previous.destination && previous.destination.credential,
-                },
-              };
-            });
+            const merged = {
+              ...((await fetchJSON(API_BASE + '/model-config?project=' + encodeURIComponent(String(props.projectId || '')), undefined).catch(function () { return null; })) || {}),
+              test: isObject(data.test) ? data.test : null,
+            };
+            setResult(merged);
           }
           setApiKey('');
-          setKeyMessage(clear ? t('settings.keyCleared') : t('settings.keySaved'));
-        } catch (keyError) {
-          setKeyMessage(errorText(keyError));
+        } catch (applyError) {
+          setError(errorText(applyError));
         } finally {
-          setSavingKey(false);
+          setSaving(false);
         }
       }
 
@@ -2625,8 +2532,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'rr-settings-head' },
           h('div', null,
             h('h2', { className: 'rr-settings-title' }, t('settings.title')),
-            h('div', { className: 'rr-settings-sub' }, t('settings.sub')),
-            h('div', { className: 'rr-settings-sub' }, t('settings.autoFilled'))
+            h('div', { className: 'rr-settings-sub' }, t('settings.sub'))
           ),
           h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: props.onBack }, t('settings.back'))
         ),
@@ -2639,137 +2545,74 @@ window.__ModuleLoader__.load({
               icon: AlertIcon({ size: 22 }), title: t('projects.errorTitle'), hint: error,
             }))
             : h('div', { className: 'rr-settings-card' },
-              harness && harness.available === false
-                ? h('div', { className: 'rr-form-error' },
-                  fill(t('settings.harnessUnavailable'), { reason: asText(harness.reason, t('health.unknown')) }))
+              providers.length === 0
+                ? h('div', { className: 'rr-form-error' }, t('settings.noProvider'))
                 : null,
               h('label', { className: 'rr-settings-row' },
                 h('span', { className: 'rr-settings-label' }, t('settings.harnessProvider')),
-                providers.length
-                  ? h('select', {
-                    className: 'rr-select',
-                    value: provider,
-                    onChange: function (event) { chooseProvider(event && event.target ? event.target.value : ''); },
-                  }, providers.map(function (item) {
-                    return h('option', { key: item.id, value: item.id }, item.name + '（' + item.id + '）');
-                  }))
-                  : h('input', {
-                    className: 'rr-input', value: provider,
-                    onChange: function (event) { setProvider(event && event.target ? event.target.value : ''); },
-                  })
+                h('select', {
+                  className: 'rr-select',
+                  value: provider,
+                  onChange: function (event) { chooseProvider(event && event.target ? event.target.value : ''); },
+                }, providers.map(function (item) {
+                  return h('option', { key: item.id, value: item.id }, item.name + '（' + item.id + '）');
+                }))
               ),
               h('label', { className: 'rr-settings-row' },
                 h('span', { className: 'rr-settings-label' }, t('settings.harnessModel')),
-                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-                  models.length
-                    ? h('select', {
-                      className: 'rr-select',
-                      value: models.some(function (item) { return item.id === model; }) ? model : '',
-                      onChange: function (event) { chooseModel(event && event.target ? event.target.value : ''); },
-                    },
-                      h('option', { value: '' }, t('settings.modelOverride')),
-                      models.map(function (item) {
-                        return h('option', { key: item.id, value: item.id }, item.name + '（' + item.id + '）');
-                      }))
-                    : null,
-                  h('input', {
-                    className: 'rr-input',
-                    value: model,
-                    placeholder: 'deepseek-chat',
-                    onChange: function (event) { chooseModel(event && event.target ? event.target.value : ''); },
-                  })
-                )
+                h('select', {
+                  className: 'rr-select',
+                  value: model,
+                  onChange: function (event) { setModel(event && event.target ? event.target.value : ''); },
+                }, models.map(function (item) {
+                  return h('option', { key: item.id, value: item.id }, item.name + '（' + item.id + '）');
+                }))
               ),
               h('label', { className: 'rr-settings-row' },
-                h('span', { className: 'rr-settings-label' }, t('settings.baseUrl')),
-                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
-                  h('input', {
-                    className: 'rr-input', value: baseUrl, placeholder: 'https://api.deepseek.com/v1',
-                    onChange: function (event) { setBaseUrl(event && event.target ? event.target.value : ''); },
-                  }),
-                  h('span', { className: 'rr-field-hint' },
-                    t('settings.baseUrlHint')
-                    + (currentProvider && currentProvider.open_ai_compatible === false
-                      ? ' · ' + t('settings.incompatibleHint') : ''))
-                )
-              ),
-              h('label', { className: 'rr-settings-row' },
-                h('span', { className: 'rr-settings-label' }, t('settings.endpointId')),
-                h('input', {
-                  className: 'rr-input', value: endpointId, placeholder: 'deepseek',
-                  onChange: function (event) { setEndpointId(event && event.target ? event.target.value : ''); },
-                })
-              ),
-              h('label', { className: 'rr-settings-row' },
-                h('span', { className: 'rr-settings-label' }, t('settings.credentialEnv')),
-                h('input', {
-                  className: 'rr-input', value: credentialEnv, placeholder: 'DEEPSEEK_API_KEY',
-                  onChange: function (event) { setCredentialEnv(event && event.target ? event.target.value : ''); },
-                })
-              ),
-              h('div', { className: 'rr-settings-row' },
-                h('span', { className: 'rr-settings-label' }, t('settings.protocol')),
-                h('span', { className: 'rr-muted', style: { fontSize: '11.5px' } }, 'chat_completions')
-              ),
-              h('div', { className: 'rr-settings-row' },
-                h('span', { className: 'rr-settings-label' }, t('settings.savedRoute')),
-                h('span', { className: 'rr-muted', style: { fontSize: '11.5px', overflowWrap: 'anywhere' } },
-                  (function () {
-                    const saved = config && isObject(config.model_backend) ? config.model_backend : {};
-                    return [asText(saved.provider, '—'), asText(saved.model, '—'), asText(saved.base_url, '—')].join(' · ');
-                  })())
-              ),
-              h('div', { className: 'rr-settings-row' },
                 h('span', { className: 'rr-settings-label' }, t('settings.apiKey')),
-                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
-                  h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
-                    h('input', {
-                      className: 'rr-input',
-                      style: { flex: '1 1 auto' },
-                      type: 'password',
-                      autoComplete: 'off',
-                      value: apiKey,
-                      placeholder: credential.present ? t('settings.present') : 'sk-...',
-                      onChange: function (event) { setApiKey(event && event.target ? event.target.value : ''); },
-                    }),
-                    h('button', {
-                      type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm',
-                      onClick: function () { saveAll(true); },
-                      disabled: savingKey || !apiKey.trim(),
-                    }, savingKey ? t('settings.saving') : t('settings.saveKey')),
-                    h('button', {
-                      type: 'button', className: 'rr-btn rr-btn-sm',
-                      onClick: function () { saveCredential(true); },
-                      disabled: savingKey || !credential.present,
-                    }, t('settings.clearKey'))
-                  ),
-                  h('span', { className: 'rr-field-hint' }, t('settings.apiKeyHint')),
-                  keyMessage ? h('span', { className: 'rr-field-hint' }, keyMessage) : null
-                )
+                h('input', {
+                  className: 'rr-input',
+                  type: 'password',
+                  autoComplete: 'off',
+                  value: apiKey,
+                  placeholder: credential.present ? t('settings.keyAlready') : 'sk-...',
+                  onChange: function (event) { setApiKey(event && event.target ? event.target.value : ''); },
+                })
               ),
               h('div', { className: 'rr-settings-status' },
                 h('span', null,
                   h('span', { className: 'rr-badge ' + (ready ? 'is-ok' : 'is-warn') },
-                    ready ? t('settings.ready') : t('settings.notReady'))),
-                h('span', null, t('settings.credential') + '：' + (credential.present ? t('settings.present') : t('settings.missing'))
-                  + (credential.env ? '（' + asText(credential.env, '') + '）' : '')),
-                Object.keys(checks).length
-                  ? h('span', null, Object.keys(checks).map(function (key) {
-                    return h('span', { key: key, style: { marginRight: '10px' } },
-                      key + ' ' + (checks[key] ? '✓' : '✗'));
-                  }))
-                  : null,
-                Object.keys(errors).length
-                  ? h('span', null, Object.keys(errors).map(function (key) {
-                    return h('div', { key: key, className: 'rr-form-error' }, key + '：' + asText(errors[key], ''));
-                  }))
+                    ready ? t('settings.ready') : t('settings.notReady')),
+                  credential.present ? h('span', { className: 'rr-muted', style: { marginLeft: '8px' } },
+                    t('settings.credential') + '：' + t('settings.present')) : null),
+                firstError ? h('span', { className: 'rr-form-error' }, firstError) : null,
+                test
+                  ? h('span', { className: test.ok ? 'is-ok' : 'is-warn' },
+                    test.skipped
+                      ? t('settings.testSkipped') + '：' + asText(test.reason, '')
+                      : (test.ok
+                        ? fill(t('settings.testOk'), { n: numberOr(test.model_count, 0), ms: numberOr(test.duration_ms, 0) })
+                        : t('settings.testFailed') + '：' + asText(test.error || ('HTTP ' + numberOr(test.status, 0)), '')))
                   : null
               ),
               h('div', { className: 'rr-settings-foot' },
-                message ? h('span', { className: 'rr-muted', style: { marginRight: 'auto' } }, message) : null,
                 h('button', {
-                  type: 'button', className: 'rr-btn rr-btn-primary', onClick: function () { saveAll(false); }, disabled: saving,
-                }, saving ? t('settings.saving') : t('settings.save'))
+                  type: 'button', className: 'rr-btn rr-btn-primary', onClick: apply, disabled: saving,
+                }, saving ? t('settings.saving') : t('settings.apply')),
+                h('button', {
+                  type: 'button', className: 'rr-btn rr-btn-sm',
+                  onClick: async function () {
+                    try {
+                      const data = await postJSON(API_BASE + '/model-config/test', { project: props.projectId });
+                      setResult(function (previous) {
+                        return { ...(isObject(previous) ? previous : {}), test: isObject(data) ? data : null };
+                      });
+                    } catch (testError) {
+                      setError(errorText(testError));
+                    }
+                  },
+                  disabled: saving,
+                }, t('settings.test'))
               )
             )
       );

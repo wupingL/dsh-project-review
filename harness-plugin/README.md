@@ -79,19 +79,25 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | GET | `/recsdk-review/api/harness-models` | DeepSeek Harness 已配置的提供方/模型（含 base_url、凭据环境变量提示） |
 | GET | `/recsdk-review/api/model-config?project=` | 控制器当前模型路由与就绪检查 |
 | POST | `/recsdk-review/api/model-config` | 保存模型路由 `{project,provider,model,base_url,endpoint_id,credential_env}`（不保存凭据） |
+| POST | `/recsdk-review/api/model-config/apply` | 一步保存路由 + API Key（`{project,provider,model,base_url?,credential_env?,api_key?}`），返回就绪状态与连通性测试 |
+| POST | `/recsdk-review/api/model-config/test` | 用已保存配置测试连通性（`GET {base_url}/models`），不返回密钥与正文 |
 | POST | `/recsdk-review/api/model-config/credential` | 保存/清除 API Key `{project,api_key}` 或 `{project,clear:true}`，密钥经 stdin 传递 |
 
 ## 模型配置页
 
-工作区头部「模型配置」打开控制器模型路由页：
+工作区头部「模型配置」打开控制器模型路由页，只保留三项输入，其余由 Harness 目录自动推导：
 
-- 提供方与模型下拉来自 **DeepSeek Harness 已配置的 llm 路由**（`llm.listProviders()` / `llm.listModels()`）；
-  `base_url`、`endpoint_id` 与凭据变量名按宿主设置自动填充（例如 `gateway` 会带出 OpenAI 兼容地址与 `GATEWAY_API_KEY`）。
-- **只需补一个 API Key**：密钥通过 `POST /recsdk-review/api/model-config/credential` 经 stdin 交给控制器，
-  写入项目状态目录的 `credentials.json`（仅本机、0600），项目配置只记录 `credential_file` / `credential_key`；
-  接口响应、日志与配置里都不出现密钥值。
-- 保存后立即显示就绪检查（provider/protocol/endpoint/model/credential）与缺失原因；可清除已保存的 Key。
-- 未暴露 OpenAI 兼容地址的提供方（如官方 DeepSeek 平台路由）提示手动填写 base_url。
+1. **提供方**：只列出控制器可用的 Harness 提供方（有 OpenAI 兼容 `base_url` 且带模型清单）；
+2. **模型**：该提供方的模型列表；
+3. **API Key**：唯一需要手填的字段。
+
+点 **「保存并启用」** 一步完成路由写入 + 密钥落盘（`POST /model-config/apply`，控制器 `model apply`），
+保存后立刻回读就绪状态；**「测试连接」** 用已保存的配置发一次 `GET {base_url}/models`
+（`POST /model-config/test`），只返回状态码、模型数与耗时，不回显密钥或响应正文。
+
+- `base_url` / 端点标识 / 凭据变量名全部自动推导，页面不再展示；protocol 固定 `chat_completions`。
+- 密钥经 stdin 交给控制器，写入项目状态目录的 `credentials.json`（0600），项目配置只记录文件路径与键名。
+- 未暴露 OpenAI 兼容地址的提供方（如官方 DeepSeek 平台路由）不会出现在可选列表中。
 
 ## 交互约定
 

@@ -98,6 +98,21 @@ elif args[:1] == ['knowledge'] and 'sync' in args:
           "commit": "abc1234def", "status": "complete", "stats": {}, "refreshed_domains": ["a"],
           "manifest_path": "state/snapshots/s2/manifest.json", "duration_seconds": 0.1,
           "published": True})
+elif args[:1] == ['model'] and 'apply' in args:
+    model = args[args.index('--model') + 1]
+    base = args[args.index('--base-url') + 1] if '--base-url' in args else ''
+    line = sys.stdin.readline().strip() if '--key-stdin' in args else ''
+    emit({"project_id": "recsdk", "cleared": False,
+          "credential": {"present": bool(line), "required": True, "source": "credential-file",
+                         "env": "GATEWAY_API_KEY"},
+          "credential_file": "state/credentials.json", "ready": True,
+          "checks": {"model_provider": True, "model_endpoint": True, "model_name": True,
+                     "model_credential": bool(line)},
+          "errors": {}, "model_backend": {"provider": "deepseek", "base_url": base, "model": model},
+          "test": {"ok": True, "skipped": False, "status": 200, "model_count": 3, "duration_ms": 42},
+          "secrets_policy": "no secrets"})
+elif args[:1] == ['model'] and 'test' in args:
+    emit({"ok": True, "skipped": False, "status": 200, "model_count": 3, "duration_ms": 40, "models": ["a", "b"]})
 elif args[:1] == ['model'] and 'credential' in args:
     if '--clear' in args:
         emit({"project_id": "recsdk", "cleared": True,
@@ -365,6 +380,19 @@ async function main() {
       { project: 'recsdk', clear: true });
     check('POST /model-config/credential 可清除', Boolean(keyCleared.body
       && keyCleared.body.credential && keyCleared.body.credential.present === false));
+
+    const applied = await callRoute(routes, '/recsdk-review/api/model-config/apply', 'POST',
+      { project: 'recsdk', provider: 'deepseek', model: 'deepseek-v4.1-flash',
+        base_url: 'https://gw.example/v1', credential_env: 'GATEWAY_API_KEY', api_key: secret });
+    check('POST /model-config/apply 一步保存路由+密钥', Boolean(applied.body
+      && applied.body.ready === true && applied.body.credential.present === true));
+    check('apply 返回连通性测试结果', Boolean(applied.body && applied.body.test && applied.body.test.ok === true));
+    check('apply 响应不回显密钥', !JSON.stringify(applied.body).includes(secret));
+
+    const tested = await callRoute(routes, '/recsdk-review/api/model-config/test', 'POST',
+      { project: 'recsdk' });
+    check('POST /model-config/test 返回连通性', Boolean(tested.body && tested.body.ok === true
+      && tested.body.model_count === 3));
 
     const list = await callRoute(routes, '/recsdk-review/api/pulls?project=recsdk');
     check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 1);

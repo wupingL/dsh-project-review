@@ -547,6 +547,55 @@ function createService(options, hostBridge) {
     return data;
   }
 
+  async function modelApply(payload) {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const projectId = String(body.project || '');
+    if (!projectId) throw new Error('缺少项目 id');
+    if (!body.provider) throw new Error('缺少 provider');
+    if (!body.model) throw new Error('缺少 model');
+    let baseUrl = body.base_url ? String(body.base_url) : '';
+    let credentialEnv = body.credential_env ? String(body.credential_env) : '';
+    if (!baseUrl || !credentialEnv) {
+      // 缺省时按 Harness 已配置的同一提供方补全，用户无需手填地址。
+      try {
+        const catalog = await service_catalog(projectId);
+        const entry = (catalog && Array.isArray(catalog.providers) ? catalog.providers : [])
+          .filter((item) => item && item.id === body.provider)[0];
+        if (entry) {
+          if (!baseUrl && entry.base_url) baseUrl = String(entry.base_url);
+          if (!credentialEnv && entry.credential_env) credentialEnv = String(entry.credential_env);
+        }
+      } catch {
+        /* 目录不可用时仍按用户输入/已有配置继续 */
+      }
+    }
+    const args = ['model', 'apply', '--id', projectId,
+      '--provider', String(body.provider), '--model', String(body.model)];
+    if (baseUrl) args.push('--base-url', baseUrl);
+    if (credentialEnv) args.push('--credential-env', credentialEnv);
+    if (body.endpoint_id) args.push('--endpoint-id', String(body.endpoint_id));
+    let input = null;
+    if (typeof body.api_key === 'string' && body.api_key.trim()) {
+      args.push('--key-stdin');
+      input = body.api_key.trim() + '\n';
+    }
+    const data = await runJson(args, Math.max(options.cliTimeoutMs, 120000), input);
+    memo.clear();
+    return data;
+  }
+
+  async function service_catalog() {
+    if (!hostBridge) return { available: false, providers: [] };
+    return hostBridge.harnessModels();
+  }
+
+  async function modelTest(payload) {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const projectId = String(body.project || '');
+    if (!projectId) throw new Error('缺少项目 id');
+    return runJson(['model', 'test', '--id', projectId], Math.max(options.cliTimeoutMs, 60000));
+  }
+
   async function harnessModels(providerFilter) {
     if (!hostBridge) return { available: false, providers: [], reason: '宿主桥不可用' };
     const data = await hostBridge.harnessModels();
@@ -655,7 +704,7 @@ function createService(options, hostBridge) {
 
   return {
     projects, branches, knowledge, probe, importProject, startSync, job,
-    modelShow, modelSet, modelSetCredential, harnessModels,
+    modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
     listPulls, showPull, health,
   };
 }
@@ -677,6 +726,24 @@ function createRouteHandler(options, service) {
       // ---- 模型配置 ---------------------------------------------------
       if (pathname === `${ROUTE_PREFIX}/harness-models`) {
         json(res, 200, await service.harnessModels());
+        return;
+      }
+      if (pathname === `${ROUTE_PREFIX}/model-config/apply` && method === 'POST') {
+        try {
+          const payload = await readJsonBody(req);
+          json(res, 200, await service.modelApply(payload));
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
+      if (pathname === `${ROUTE_PREFIX}/model-config/test` && method === 'POST') {
+        try {
+          const payload = await readJsonBody(req);
+          json(res, 200, await service.modelTest(payload));
+        } catch (error) {
+          json(res, 200, { ok: false, skipped: true, reason: error && error.message ? error.message : String(error) });
+        }
         return;
       }
       if (pathname === `${ROUTE_PREFIX}/model-config/credential` && method === 'POST') {

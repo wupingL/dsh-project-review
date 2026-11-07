@@ -587,6 +587,72 @@ def model_set_credential(project_id, api_key=None, clear=False):
             "secrets_policy": "API Key 只写入本机状态目录的凭据文件，不进入项目配置、日志或接口响应。"}
 
 
+def model_apply(project_id, *, provider, model, base_url=None, endpoint_id=None,
+                credential_env=None, api_key=None):
+    """一步完成：写路由 + （可选）写 API Key，返回最终就绪状态与连通性测试结果。"""
+    saved = model_set(project_id, provider=provider, model=model, base_url=base_url,
+                      endpoint_id=endpoint_id, credential_env=credential_env)
+    if api_key:
+        saved = model_set_credential(project_id, api_key=api_key)
+        saved = {**saved, "model_backend": model_show(project_id)["model_backend"]}
+    tested = model_test(project_id)
+    return {**saved, "test": tested}
+
+
+def model_test(project_id):
+    """用已保存的路由与凭据做一次最小连通性检查（GET /models），不回显凭据与响应正文。"""
+    _entry, config = load_project_config(project_id)
+    from .backends import backend_settings, resolve_secret
+    try:
+        settings = backend_settings(config)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "skipped": True, "reason": str(exc)}
+    if settings["provider"] != "deepseek":
+        return {"ok": False, "skipped": True, "reason": "codex 后端不支持在线自检"}
+    if not settings["base_url"]:
+        return {"ok": False, "skipped": True, "reason": "base_url 未配置"}
+    try:
+        secret, source = resolve_secret(settings, config)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "skipped": True, "reason": str(exc)}
+    if not secret:
+        return {"ok": False, "skipped": True, "reason": "凭据缺失"}
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+    url = settings["base_url"].rstrip("/") + "/models"
+    request = Request(url, headers={"Authorization": "Bearer " + secret, "Accept": "application/json"})
+    started = time.monotonic()
+    try:
+        with urlopen(request, timeout=20) as response:
+            status = getattr(response, "status", 200)
+            raw = response.read()
+    except HTTPError as exc:
+        status = exc.code
+        raw = b""
+    except (URLError, TimeoutError, OSError) as exc:
+        return {"ok": False, "skipped": False, "url": url, "credential_source": source,
+                "error": f"endpoint unreachable ({type(exc).__name__})",
+                "duration_ms": int((time.monotonic() - started) * 1000)}
+    count = None
+    model_ids = []
+    try:
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, list):
+            count = len(data)
+            model_ids = [str(item.get("id")) for item in data if isinstance(item, dict) and item.get("id")][:20]
+    except (UnicodeDecodeError, ValueError):
+        count = None
+    ok = 200 <= status < 300
+    result = {"ok": ok, "skipped": False, "status": status, "url": url,
+              "credential_source": source, "model_count": count, "models": model_ids,
+              "duration_ms": int((time.monotonic() - started) * 1000)}
+    if not ok:
+        result["error"] = {401: "凭据被拒绝（401）", 403: "无权限（403）", 404: "该地址没有 /models 接口（404）"}.get(
+            status, f"HTTP {status}")
+    return result
+
+
 def derive_domains(config, ref):
     """首次构建知识库时按顶层目录派生出领域配置并写回项目配置。"""
     from .git import Git

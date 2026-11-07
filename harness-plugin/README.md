@@ -79,16 +79,24 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | GET | `/recsdk-review/api/harness-models` | DeepSeek Harness 已配置的提供方/模型（含 base_url、凭据环境变量提示） |
 | GET | `/recsdk-review/api/model-config?project=` | 控制器当前模型路由与就绪检查 |
 | POST | `/recsdk-review/api/model-config` | 保存模型路由 `{project,provider,model,base_url,endpoint_id,credential_env}`（不保存凭据） |
+| POST | `/recsdk-review/api/model-config/credential` | 保存/清除 API Key `{project,api_key}` 或 `{project,clear:true}`，密钥经 stdin 传递 |
 
 ## 模型配置页
 
 工作区头部「模型配置」打开控制器模型路由页：
 
-- 提供方与模型下拉来自 **DeepSeek Harness 已配置的 llm 路由**（`llm.listProviders()` / `llm.listModels()`），
-  并结合宿主设置推导 `base_url` 与凭据环境变量（例如 `gateway` 提供方会带出 OpenAI 兼容地址与 `GATEWAY_API_KEY`）。
-- 页面只写路由参数到项目配置（`model_backend`），**不写入也不返回凭据值**；凭据仍由进程/用户环境变量或凭证文件提供。
-- 保存后立即显示控制器就绪检查（provider/protocol/endpoint/model/credential），缺失项与原因原样呈现。
-- 未暴露 OpenAI 兼容地址的提供方（如官方 DeepSeek 平台路由）会提示手动填写 base_url。
+- 提供方与模型下拉来自 **DeepSeek Harness 已配置的 llm 路由**（`llm.listProviders()` / `llm.listModels()`）；
+  `base_url`、`endpoint_id` 与凭据变量名按宿主设置自动填充（例如 `gateway` 会带出 OpenAI 兼容地址与 `GATEWAY_API_KEY`）。
+- **只需补一个 API Key**：密钥通过 `POST /recsdk-review/api/model-config/credential` 经 stdin 交给控制器，
+  写入项目状态目录的 `credentials.json`（仅本机、0600），项目配置只记录 `credential_file` / `credential_key`；
+  接口响应、日志与配置里都不出现密钥值。
+- 保存后立即显示就绪检查（provider/protocol/endpoint/model/credential）与缺失原因；可清除已保存的 Key。
+- 未暴露 OpenAI 兼容地址的提供方（如官方 DeepSeek 平台路由）提示手动填写 base_url。
+
+## 交互约定
+
+- 进入工作区即自动拉取最新 PR 列表（请求带 `refresh=1`），不再提供手动「刷新」按钮。
+- 知识库的「检查更新」只保留卡片内一处；同步日志可收起，任务结束后自动收起。
 
 ## Agent 工具
 

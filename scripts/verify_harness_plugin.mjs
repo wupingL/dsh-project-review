@@ -98,6 +98,23 @@ elif args[:1] == ['knowledge'] and 'sync' in args:
           "commit": "abc1234def", "status": "complete", "stats": {}, "refreshed_domains": ["a"],
           "manifest_path": "state/snapshots/s2/manifest.json", "duration_seconds": 0.1,
           "published": True})
+elif args[:1] == ['model'] and 'credential' in args:
+    if '--clear' in args:
+        emit({"project_id": "recsdk", "cleared": True,
+              "credential": {"present": False, "required": True, "source": "missing",
+                             "env": "DEEPSEEK_API_KEY"},
+              "ready": False, "checks": {"model_credential": False},
+              "errors": {"model_credential": "credential is missing"}, "secrets_policy": "no secrets"})
+    else:
+        line = sys.stdin.readline().strip() if '--key-stdin' in args else ''
+        emit({"project_id": "recsdk", "cleared": False,
+              "credential": {"present": bool(line), "required": True, "source": "credential-file",
+                             "env": "DEEPSEEK_API_KEY"},
+              "ready": True,
+              "checks": {"model_provider": True, "model_endpoint": True, "model_name": True,
+                         "model_credential": bool(line)},
+              "errors": {}, "secrets_policy": "no secrets",
+              "echo_guard": line[:0]})
 elif args[:1] == ['model'] and 'show' in args:
     emit({"project_id": "recsdk", "config_path": "config/recsdk.json",
           "model_backend": {"provider": "deepseek", "protocol": "chat_completions",
@@ -335,6 +352,19 @@ async function main() {
     check('POST /model-config 保存路由', Boolean(modelSaved.body && modelSaved.body.model_backend
       && modelSaved.body.model_backend.model === 'deepseek-chat'));
     check('保存结果不含凭据值', Boolean(modelSaved.body && !JSON.stringify(modelSaved.body).includes('sk-')));
+
+    const secret = 'sk-test-SECRET-must-not-echo';
+    const keySaved = await callRoute(routes, '/recsdk-review/api/model-config/credential', 'POST',
+      { project: 'recsdk', api_key: secret });
+    check('POST /model-config/credential 保存 API Key', Boolean(keySaved.body
+      && keySaved.body.credential && keySaved.body.credential.present === true));
+    check('凭据经 stdin 传入且响应不回显', !JSON.stringify(keySaved.body).includes(secret));
+    check('保存后可报就绪', Boolean(keySaved.body && keySaved.body.ready === true));
+
+    const keyCleared = await callRoute(routes, '/recsdk-review/api/model-config/credential', 'POST',
+      { project: 'recsdk', clear: true });
+    check('POST /model-config/credential 可清除', Boolean(keyCleared.body
+      && keyCleared.body.credential && keyCleared.body.credential.present === false));
 
     const list = await callRoute(routes, '/recsdk-review/api/pulls?project=recsdk');
     check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 1);

@@ -216,6 +216,13 @@ window.__ModuleLoader__.load({
       'settings.harnessUnavailable': 'Harness 模型清单不可用：{reason}',
       'settings.back': '返回',
       'settings.incompatibleHint': '该提供方未提供 OpenAI 兼容地址，请手动填写',
+      'settings.apiKey': 'API Key（仅此项需要填写）',
+      'settings.apiKeyHint': '留空表示不修改；只写入本机状态目录的凭据文件，不进入项目配置或日志',
+      'settings.saveKey': '保存 API Key',
+      'settings.clearKey': '清除',
+      'settings.keySaved': 'API Key 已保存',
+      'settings.keyCleared': 'API Key 已清除',
+      'settings.autoFilled': '提供方、模型、接口地址与凭据变量已按 Harness 配置自动填写',
     };
 
     const EN = {
@@ -419,6 +426,13 @@ window.__ModuleLoader__.load({
       'settings.harnessUnavailable': 'Harness model catalog unavailable: {reason}',
       'settings.back': 'Back',
       'settings.incompatibleHint': 'This provider exposes no OpenAI-compatible base URL; enter one manually',
+      'settings.apiKey': 'API key (the only field you need to fill)',
+      'settings.apiKeyHint': 'Empty means unchanged; stored only in a local credential file, never in project config or logs',
+      'settings.saveKey': 'Save API key',
+      'settings.clearKey': 'Clear',
+      'settings.keySaved': 'API key saved',
+      'settings.keyCleared': 'API key cleared',
+      'settings.autoFilled': 'Provider, model, base URL and credential variable are filled from the Harness configuration',
     };
 
     const CSS = `
@@ -2407,6 +2421,9 @@ window.__ModuleLoader__.load({
       const [credentialEnv, setCredentialEnv] = React.useState('DEEPSEEK_API_KEY');
       const [saving, setSaving] = React.useState(false);
       const [message, setMessage] = React.useState('');
+      const [apiKey, setApiKey] = React.useState('');
+      const [savingKey, setSavingKey] = React.useState(false);
+      const [keyMessage, setKeyMessage] = React.useState('');
 
       React.useEffect(function () {
         let active = true;
@@ -2497,11 +2514,50 @@ window.__ModuleLoader__.load({
         }
       }
 
+      async function saveCredential(clear) {
+        if (!clear && !apiKey.trim()) {
+          setKeyMessage(t('settings.apiKey'));
+          return;
+        }
+        setSavingKey(true);
+        setKeyMessage('');
+        try {
+          const data = await postJSON(API_BASE + '/model-config/credential', {
+            project: props.projectId,
+            api_key: clear ? undefined : apiKey.trim(),
+            clear: clear === true,
+          });
+          if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
+          if (isObject(data)) {
+            setConfig(function (previous) {
+              if (!isObject(previous)) return previous;
+              return {
+                ...previous,
+                ready: data.ready === true,
+                checks: isObject(data.checks) ? data.checks : previous.checks,
+                errors: isObject(data.errors) ? data.errors : previous.errors,
+                destination: {
+                  ...(isObject(previous.destination) ? previous.destination : {}),
+                  credential: isObject(data.credential) ? data.credential : previous.destination && previous.destination.credential,
+                },
+              };
+            });
+          }
+          setApiKey('');
+          setKeyMessage(clear ? t('settings.keyCleared') : t('settings.keySaved'));
+        } catch (keyError) {
+          setKeyMessage(errorText(keyError));
+        } finally {
+          setSavingKey(false);
+        }
+      }
+
       return h('div', { className: 'rr-settings' },
         h('div', { className: 'rr-settings-head' },
           h('div', null,
             h('h2', { className: 'rr-settings-title' }, t('settings.title')),
-            h('div', { className: 'rr-settings-sub' }, t('settings.sub'))
+            h('div', { className: 'rr-settings-sub' }, t('settings.sub')),
+            h('div', { className: 'rr-settings-sub' }, t('settings.autoFilled'))
           ),
           h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: props.onBack }, t('settings.back'))
         ),
@@ -2585,6 +2641,34 @@ window.__ModuleLoader__.load({
               h('div', { className: 'rr-settings-row' },
                 h('span', { className: 'rr-settings-label' }, t('settings.protocol')),
                 h('span', { className: 'rr-muted', style: { fontSize: '11.5px' } }, 'chat_completions')
+              ),
+              h('div', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.apiKey')),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+                  h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+                    h('input', {
+                      className: 'rr-input',
+                      style: { flex: '1 1 auto' },
+                      type: 'password',
+                      autoComplete: 'off',
+                      value: apiKey,
+                      placeholder: credential.present ? t('settings.present') : 'sk-...',
+                      onChange: function (event) { setApiKey(event && event.target ? event.target.value : ''); },
+                    }),
+                    h('button', {
+                      type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm',
+                      onClick: function () { saveCredential(false); },
+                      disabled: savingKey || !apiKey.trim(),
+                    }, savingKey ? t('settings.saving') : t('settings.saveKey')),
+                    h('button', {
+                      type: 'button', className: 'rr-btn rr-btn-sm',
+                      onClick: function () { saveCredential(true); },
+                      disabled: savingKey || !credential.present,
+                    }, t('settings.clearKey'))
+                  ),
+                  h('span', { className: 'rr-field-hint' }, t('settings.apiKeyHint')),
+                  keyMessage ? h('span', { className: 'rr-field-hint' }, keyMessage) : null
+                )
               ),
               h('div', { className: 'rr-settings-status' },
                 h('span', null,
@@ -2796,7 +2880,8 @@ window.__ModuleLoader__.load({
       const [listData, setListData] = React.useState(null);
       const [listLoading, setListLoading] = React.useState(true);
       const [listError, setListError] = React.useState('');
-      const [reloadKey, setReloadKey] = React.useState(0);
+      // 每次进入工作区都强制刷新到最新（列表请求带 refresh=1），不再提供手动刷新按钮。
+      const [reloadKey, setReloadKey] = React.useState(1);
       const [selected, setSelected] = React.useState(null);
       const [detail, setDetail] = React.useState(null);
       const [detailLoading, setDetailLoading] = React.useState(false);
@@ -3062,7 +3147,8 @@ window.__ModuleLoader__.load({
         setSelected(null);
         setQuery('');
         setStateFilter('all');
-        setReloadKey(0);
+        setReloadKey(function (value) { return value + 1; });
+        setSettingsOpen(false);
       }
 
       function openImport() {
@@ -3288,20 +3374,7 @@ window.__ModuleLoader__.load({
             className: 'rr-btn rr-btn-sm',
             onClick: function () { setSettingsOpen(function (value) { return !value; }); },
             'aria-pressed': settingsOpen ? 'true' : 'false',
-          }, t('action.model')),
-          h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: checkKnowledge, disabled: knowledgeLoading },
-            t('action.check')),
-          h('button', {
-            type: 'button',
-            className: 'rr-btn',
-            onClick: refresh,
-            disabled: listLoading,
-            'aria-label': t('aria.refresh'),
-            title: t('aria.refresh'),
-          },
-            h('span', { className: 'rr-icon' + (listLoading ? ' rr-spin' : '') }, RefreshIcon({ size: 14 })),
-            h('span', null, t('action.refresh'))
-          )
+          }, t('action.model'))
         );
 
       const metaLine = view === 'workspace'

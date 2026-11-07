@@ -45,7 +45,7 @@ function resolveOptions(config) {
 }
 
 /** 执行控制器 CLI；返回 {ok, data} 或 {ok:false, error}。永不抛出。 */
-function runCli(options, args, timeoutMs = options.cliTimeoutMs) {
+function runCli(options, args, timeoutMs = options.cliTimeoutMs, input = null) {
   return new Promise((resolve) => {
     const executable = existsSync(options.python) ? options.python : 'python';
     let child;
@@ -53,12 +53,18 @@ function runCli(options, args, timeoutMs = options.cliTimeoutMs) {
       child = spawn(executable, ['-m', 'project_assistant.cli', '--config', options.configFile, ...args], {
         cwd: options.root,
         windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
       });
     } catch (error) {
       resolve({ ok: false, error: `无法启动控制器解释器：${error && error.message ? error.message : String(error)}` });
       return;
+    }
+    try {
+      if (typeof input === 'string' && input.length) child.stdin.write(input);
+      child.stdin.end();
+    } catch {
+      /* 忽略 stdin 写入失败：控制器会按缺失输入处理 */
     }
     let stdout = '';
     let stderr = '';
@@ -491,8 +497,8 @@ function createService(options, hostBridge) {
   const memo = createMemo();
   const jobs = new Map();
 
-  async function runJson(args, timeoutMs) {
-    const run = await runCli(options, args, timeoutMs);
+  async function runJson(args, timeoutMs, input = null) {
+    const run = await runCli(options, args, timeoutMs, input);
     if (!run.ok) throw new Error(run.error || '控制器不可用');
     return run.data;
   }
@@ -517,6 +523,26 @@ function createService(options, hostBridge) {
     if (body.protocol) args.push('--protocol', String(body.protocol));
     if (body.credential_env) args.push('--credential-env', String(body.credential_env));
     const data = await runJson(args, options.cliTimeoutMs);
+    memo.clear();
+    return data;
+  }
+
+  async function modelSetCredential(payload) {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const projectId = String(body.project || '');
+    if (!projectId) throw new Error('缺少项目 id');
+    const args = ['model', 'credential', '--id', projectId];
+    let input = null;
+    if (body.clear === true) {
+      args.push('--clear');
+    } else {
+      const apiKey = typeof body.api_key === 'string' ? body.api_key.trim() : '';
+      if (!apiKey) throw new Error('缺少 API Key');
+      // 走 stdin：避免凭据出现在进程参数或日志里。
+      args.push('--key-stdin');
+      input = apiKey + '\n';
+    }
+    const data = await runJson(args, options.cliTimeoutMs, input);
     memo.clear();
     return data;
   }
@@ -629,7 +655,7 @@ function createService(options, hostBridge) {
 
   return {
     projects, branches, knowledge, probe, importProject, startSync, job,
-    modelShow, modelSet, harnessModels,
+    modelShow, modelSet, modelSetCredential, harnessModels,
     listPulls, showPull, health,
   };
 }
@@ -651,6 +677,15 @@ function createRouteHandler(options, service) {
       // ---- 模型配置 ---------------------------------------------------
       if (pathname === `${ROUTE_PREFIX}/harness-models`) {
         json(res, 200, await service.harnessModels());
+        return;
+      }
+      if (pathname === `${ROUTE_PREFIX}/model-config/credential` && method === 'POST') {
+        try {
+          const payload = await readJsonBody(req);
+          json(res, 200, await service.modelSetCredential(payload));
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
+        }
         return;
       }
       if (pathname === `${ROUTE_PREFIX}/model-config` && method !== 'POST') {

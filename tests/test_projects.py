@@ -209,6 +209,33 @@ class ProjectRegistryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 projects.model_set(project_id, provider="openai", model="x", base_url="https://api.example.com")
 
+    def test_model_credential_roundtrip_never_echoes_secret(self):
+        repo = self.root / "model-key"
+        make_repo(repo)
+        with self.patch_paths():
+            imported = projects.import_project("modelk", "https://gitcode.com/demo/modelk", str(repo), ["main"])
+            project_id = imported["project"]["id"]
+            projects.model_set(project_id, provider="deepseek", model="deepseek-chat",
+                               base_url="https://api.deepseek.com/v1", credential_env="MY_LLM_KEY")
+            saved = projects.model_set_credential(project_id, api_key="sk-test-SECRET-123")
+            self.assertNotIn("sk-test-SECRET-123", json.dumps(saved, ensure_ascii=False))
+            self.assertTrue(saved["credential"]["present"])
+            from project_assistant.common import Config
+            config = Config(self.config_dir / (project_id + ".json"))
+            credential_path = Path(saved["credential_file"])
+            self.assertTrue(credential_path.is_file())
+            self.assertEqual(json.loads(credential_path.read_text(encoding="utf-8"))["MY_LLM_KEY"], "sk-test-SECRET-123")
+            config_text = config.path.read_text(encoding="utf-8")
+            self.assertNotIn("sk-test-SECRET-123", config_text)
+            # 控制器通过 credential_file 真的能解析到该凭据
+            from project_assistant.backends import credential_status
+            status = credential_status(config)
+            self.assertTrue(status["present"])
+            self.assertEqual(status["source"], "credential-file")
+            cleared = projects.model_set_credential(project_id, clear=True)
+            self.assertFalse(cleared["credential"]["present"])
+            self.assertFalse(projects.model_set_credential.__doc__ is None)
+
 
 if __name__ == "__main__":
     unittest.main()

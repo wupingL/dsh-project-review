@@ -13,7 +13,8 @@ from .feature import Features
 from .gitcode import GitCode
 from .inspect import list_pulls, show_pull
 from .projects import (import_project, knowledge_status, list_projects, model_set,
-                       model_show, probe, project_branches, resolve_config, sync_knowledge)
+                       model_set_credential, model_show, probe, project_branches,
+                       resolve_config, sync_knowledge)
 from .review import Reviews
 
 
@@ -94,6 +95,11 @@ def main(argv=None):
     mset.add_argument("--protocol")
     mset.add_argument("--credential-env")
     mset.add_argument("--credential-file")
+    mcred = model.add_parser("credential")
+    mcred.add_argument("--id", required=True)
+    mcred.add_argument("--key-stdin", action="store_true",
+                       help="从标准输入读取 API Key（避免出现在进程参数里）")
+    mcred.add_argument("--clear", action="store_true")
     context = commands.add_parser("context").add_subparsers(dest="action", required=True)
     sync = context.add_parser("sync")
     sync.add_argument("--ref", required=True)
@@ -154,6 +160,11 @@ def main(argv=None):
         if args.command == "model":
             if args.action == "show":
                 result = model_show(args.id)
+            elif args.action == "credential":
+                secret = None
+                if args.key_stdin and not args.clear:
+                    secret = sys.stdin.readline().strip()
+                result = model_set_credential(args.id, api_key=secret, clear=args.clear)
             else:
                 result = model_set(args.id, provider=args.provider, model=args.model,
                                    base_url=args.base_url, endpoint_id=args.endpoint_id,

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from pathlib import Path
@@ -528,6 +529,59 @@ def model_set(project_id, *, provider, model, base_url=None, endpoint_id=None,
     value["model_backend"] = backend
     atomic_json(config.path, value)
     return model_show(project_id)
+
+
+def model_set_credential(project_id, api_key=None, clear=False):
+    """把 API Key 写入项目状态目录下的凭据文件（不入配置、不进日志、不返回）。
+
+    控制器 ``resolve_secret`` 支持 ``credential_file``（JSON，键为 credential_key 或
+    credential_env）。本函数只负责写入/清除这个文件，并在配置里记录文件路径。
+    """
+    _entry, config = load_project_config(project_id)
+    from .backends import backend_settings, credential_status
+    try:
+        settings = backend_settings(config)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"模型路由尚未配置：{exc}") from None
+    key_name = (settings.get("credential_key") or settings.get("credential_env")
+                or "DEEPSEEK_API_KEY").strip()
+    target = _repo_state_of(config) / "credentials.json"
+    value = read_json(target, {}) if target.is_file() else {}
+    if not isinstance(value, dict):
+        value = {}
+    if clear:
+        value.pop(key_name, None)
+        atomic_json(target, value)
+    else:
+        secret = (api_key or "").strip()
+        if not secret:
+            raise ValueError("API Key 不能为空")
+        value[key_name] = secret
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_json(target, value)
+        try:
+            os.chmod(target, 0o600)
+        except OSError:
+            pass
+    config_value = read_json(config.path, {}) or {}
+    backend = config_value.get("model_backend") if isinstance(config_value.get("model_backend"), dict) else {}
+    backend = dict(backend)
+    backend["credential_file"] = str(target)
+    backend["credential_key"] = key_name
+    config_value["model_backend"] = backend
+    atomic_json(config.path, config_value)
+    _entry, refreshed = load_project_config(project_id)
+    status = credential_status(refreshed)
+    from .backends import backend_checks
+    checks = backend_checks(refreshed, network=False)
+    return {"project_id": project_id,
+            "credential": status,
+            "credential_file": str(target),
+            "cleared": bool(clear),
+            "ready": all(checks["checks"].get(name) is True for name in SEMANTIC_CHECKS),
+            "checks": checks["checks"],
+            "errors": checks["errors"],
+            "secrets_policy": "API Key 只写入本机状态目录的凭据文件，不进入项目配置、日志或接口响应。"}
 
 
 def derive_domains(config, ref):

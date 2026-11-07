@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -498,8 +499,11 @@ def model_set(project_id, *, provider, model, base_url=None, endpoint_id=None,
     if provider == "deepseek":
         if not base_url:
             raise ValueError("deepseek 路由需要 base_url")
-        if not base_url.lower().startswith("https://"):
-            raise ValueError("base_url 必须是 https 地址")
+        from urllib.parse import urlsplit
+        parsed = urlsplit(base_url)
+        loopback = parsed.scheme == "http" and (parsed.hostname in {"127.0.0.1", "localhost", "::1"})
+        if not (base_url.lower().startswith("https://") or loopback):
+            raise ValueError("base_url 必须是 https 地址（本机回环桥接允许 http://127.0.0.1）")
     value = read_json(config.path, {}) or {}
     previous = value.get("model_backend") if isinstance(value.get("model_backend"), dict) else {}
     backend = dict(previous)

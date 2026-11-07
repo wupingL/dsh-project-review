@@ -69,15 +69,18 @@ Record 'review list (live)' $LASTEXITCODE
 & $python -m project_assistant.cli --project recsdk review list --offline | Out-Null
 Record 'review list (offline)' $LASTEXITCODE
 
-Section '5. semantic sync must be refused without a model route'
-$semanticOutput = & $python -m project_assistant.cli knowledge sync --id recsdk --ref develop 2>&1 | Out-String
-$semanticCode = $LASTEXITCODE
-if ($semanticCode -eq 1 -and $semanticOutput -match 'model_backend.base_url') {
-    Write-Host 'refused before any fetch/build, as expected'
-    Record 'semantic sync refused' 0
+Section '5. model route (Harness bridge or manual) is usable'
+$modelOutput = & $python -m project_assistant.cli model test --id recsdk 2>&1 | Out-String
+$modelCode = $LASTEXITCODE
+if ($modelCode -eq 0 -and $modelOutput -match '"ok": true') {
+    Write-Host 'model self-check reached the configured endpoint'
+    Record 'model self-check (reachable)' 0
+} elseif ($modelCode -eq 0 -and $modelOutput -match '"skipped": true') {
+    Write-Host 'model route not configured (page: use the Harness model to enable semantic work)'
+    Record 'model self-check (not configured)' 0
 } else {
-    Write-Host $semanticOutput
-    Record 'semantic sync refused' 1
+    Write-Host $modelOutput
+    Record 'model self-check' 1
 }
 
 Section '6. installed bundle'

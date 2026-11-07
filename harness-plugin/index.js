@@ -13,6 +13,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import http from 'node:http';
+import { randomBytes } from 'node:crypto';
 
 export const name = 'recsdk-review';
 export const inject = ['tools'];
@@ -35,12 +37,14 @@ function resolveOptions(config) {
     : path.join(root, 'config', 'recsdk.json');
   const timeout = Number(value.cliTimeoutMs);
   const syncTimeout = Number(value.syncTimeoutMs);
+  const bridgePort = Number(value.bridgePort);
   return {
     root,
     python,
     configFile,
     cliTimeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 120000,
     syncTimeoutMs: Number.isFinite(syncTimeout) && syncTimeout > 0 ? syncTimeout : 1800000,
+    bridgePort: Number.isInteger(bridgePort) && bridgePort > 0 && bridgePort < 65536 ? bridgePort : 55114,
   };
 }
 
@@ -369,6 +373,127 @@ function json(res, status, value) {
   res.end(body);
 }
 
+/**
+ * 宿主模型桥：在 127.0.0.1 上起一个带随机令牌的最小 OpenAI 兼容服务，
+ * 把控制器的 /chat/completions 请求转成宿主 llm.stream 调用。
+ * 不经过 DSH Web 端口（那里需要浏览器会话鉴权），因此控制器可直连。
+ */
+function createModelBridge(hostBridge, options) {
+  const tokenFile = path.join(options.root, '.harness-bridge-token');
+  let token = null;
+  try {
+    if (existsSync(tokenFile)) {
+      const stored = require('node:fs').readFileSync(tokenFile, 'utf8').trim();
+      if (stored) token = stored;
+    }
+  } catch {
+    /* 读取失败则重新生成 */
+  }
+  if (!token) {
+    token = randomBytes(24).toString('hex');
+    try {
+      require('node:fs').writeFileSync(tokenFile, token + '\n', { mode: 0o600 });
+    } catch {
+      /* 无法持久化时仅本次进程有效 */
+    }
+  }
+  let server = null;
+  let port = null;
+  let starting = null;
+  const preferredPort = Number(options.bridgePort) > 0 ? Number(options.bridgePort) : 0;
+
+  function send(res, status, value) {
+    const body = Buffer.from(JSON.stringify(value), 'utf8');
+    res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': body.length });
+    res.end(body);
+  }
+
+  function authorized(req) {
+    const header = String(req.headers.authorization || '');
+    return header === `Bearer ${token}`;
+  }
+
+  function handle(req, res) {
+    const url = String(req.url || '/');
+    if (!authorized(req)) {
+      send(res, 401, { error: { message: 'bridge unauthorized' } });
+      return;
+    }
+    if (req.method === 'GET' && (url === '/v1/models' || url === '/models')) {
+      hostBridge.models()
+        .then((payload) => send(res, 200, payload))
+        .catch((error) => send(res, 500, { error: { message: error && error.message ? error.message : String(error) } }));
+      return;
+    }
+    if (req.method === 'POST' && (url === '/v1/chat/completions' || url === '/chat/completions')) {
+      let size = 0;
+      const chunks = [];
+      req.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > 32 * 1024 * 1024) {
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        let payload = {};
+        try {
+          payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        } catch {
+          send(res, 400, { error: { message: 'invalid json' } });
+          return;
+        }
+        hostBridge.chatCompletion(payload)
+          .then((value) => send(res, 200, value))
+          .catch((error) => send(res, 500, {
+            error: { message: error && error.message ? error.message : String(error) },
+          }));
+      });
+      return;
+    }
+    send(res, 404, { error: { message: 'not found' } });
+  }
+
+  function ensure() {
+    if (server) return Promise.resolve({ base_url: `http://127.0.0.1:${port}/v1`, token });
+    if (starting) return starting;
+    starting = new Promise((resolve, reject) => {
+      const instance = http.createServer(handle);
+      const start = (listenPort) => {
+        instance.once('error', (error) => {
+          if (listenPort !== 0) {
+            // 首选端口被占用时退回临时端口（地址变化需重新执行“使用 Harness 模型”）。
+            try { instance.close(); } catch { /* ignore */ }
+            start(0);
+            return;
+          }
+          starting = null;
+          reject(error);
+        });
+        instance.listen(listenPort, '127.0.0.1', () => {
+          server = instance;
+          port = instance.address().port;
+          starting = null;
+          resolve({ base_url: `http://127.0.0.1:${port}/v1`, token });
+        });
+      };
+      start(preferredPort);
+    });
+    return starting;
+  }
+
+  function dispose() {
+    if (server) {
+      try { server.close(); } catch { /* ignore */ }
+      server = null;
+      port = null;
+    }
+  }
+
+  return { ensure, dispose, token: () => token };
+}
+
 function createHostBridge(ctx) {
   function service(key) {
     try {
@@ -486,14 +611,134 @@ function createHostBridge(ctx) {
     return {
       available: true,
       providers: items,
+      current: currentSelection(),
       note: '模型清单来自 DeepSeek Harness 已配置的 llm 路由；凭据由宿主/环境变量持有，本页只保存路由与模型名。',
     };
   }
 
-  return { harnessModels };
+  function currentSelection() {
+    const service = (key) => {
+      try {
+        return typeof ctx.get === 'function' ? ctx.get(key) : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    const owner = service('agentDefaultModel');
+    try {
+      if (owner && typeof owner.currentSelection === 'function') {
+        const selection = owner.currentSelection();
+        if (selection && selection.provider && selection.model) {
+          return { provider: String(selection.provider), model: String(selection.model) };
+        }
+      }
+    } catch {
+      /* 选择读取失败时退回首个可用提供方 */
+    }
+    return null;
+  }
+
+  /** 把控制器的 chat/completions 请求转成宿主的 llm.stream 调用（复用 Harness 凭据）。 */
+  async function chatCompletion(body) {
+    const llm = service('llm');
+    if (!llm || typeof llm.stream !== 'function') throw new Error('宿主未提供 llm 服务');
+    const request = body && typeof body === 'object' ? body : {};
+    const requested = typeof request.model === 'string' ? request.model : '';
+    let provider = null;
+    let model = null;
+    if (requested.includes('::')) {
+      const [left, right] = requested.split('::');
+      provider = left.trim();
+      model = right.trim();
+    } else {
+      const selection = currentSelection();
+      provider = selection ? selection.provider : null;
+      model = requested && !requested.startsWith('harness') ? requested : (selection ? selection.model : null);
+      if (!provider && model) {
+        // 未记录提供方时在可选目录里找第一个拥有该模型的提供方
+        const catalog = await harnessModels();
+        for (const entry of Array.isArray(catalog.providers) ? catalog.providers : []) {
+          if (Array.isArray(entry.models) && entry.models.some((item) => item.id === model)) {
+            provider = entry.id;
+            break;
+          }
+        }
+      }
+    }
+    if (!provider || !model) throw new Error('无法确定 Harness 当前启用的模型');
+    const incoming = Array.isArray(request.messages) ? request.messages : [];
+    const systems = [];
+    const messages = [];
+    for (const message of incoming) {
+      if (!message || typeof message !== 'object') continue;
+      const text = typeof message.content === 'string'
+        ? message.content
+        : Array.isArray(message.content)
+          ? message.content.map((part) => (part && part.text) || '').join('')
+          : '';
+      if (!text) continue;
+      if (message.role === 'system') systems.push(text);
+      else messages.push({ role: message.role === 'assistant' ? 'assistant' : 'user', content: [{ type: 'text', text }] });
+    }
+    if (!messages.length) throw new Error('请求没有可发送的消息');
+    const options = { provider, model, messages };
+    if (systems.length) options.system = systems.join('\n\n');
+    if (Number.isFinite(request.max_tokens)) options.maxTokens = request.max_tokens;
+    if (Number.isFinite(request.max_completion_tokens)) options.maxTokens = request.max_completion_tokens;
+    if (Number.isFinite(request.temperature)) options.temperature = request.temperature;
+    let text = '';
+    let finish = 'stop';
+    let usage = null;
+    const stream = llm.stream(options);
+    for await (const chunk of stream) {
+      if (!chunk || typeof chunk !== 'object') continue;
+      if (chunk.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text;
+      else if (chunk.type === 'usage' && chunk.usage) usage = chunk.usage;
+      else if (chunk.type === 'finish' && chunk.reason) {
+        finish = chunk.reason.kind === 'max-tokens' ? 'length'
+          : chunk.reason.kind === 'stop' ? 'stop'
+            : chunk.reason.kind === 'tool-calls' ? 'tool_calls' : chunk.reason.kind;
+        if (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted') {
+          const failure = chunk.reason.failure && chunk.reason.failure.message
+            ? chunk.reason.failure.message
+            : chunk.reason.kind;
+          throw new Error(`Harness 模型调用失败：${failure}`);
+        }
+      }
+    }
+    if (!text.trim()) throw new Error('Harness 模型返回了空内容');
+    const payload = {
+      id: `harness-${Date.now()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: `${provider}::${model}`,
+      choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: finish }],
+    };
+    if (usage) {
+      payload.usage = {
+        prompt_tokens: usage.inputTokens,
+        completion_tokens: usage.outputTokens,
+        total_tokens: usage.totalTokens ?? (usage.inputTokens || 0) + (usage.outputTokens || 0),
+      };
+    }
+    return payload;
+  }
+
+  async function models() {
+    const catalog = await harnessModels();
+    const data = [];
+    for (const entry of Array.isArray(catalog.providers) ? catalog.providers : []) {
+      for (const model of Array.isArray(entry.models) ? entry.models : []) {
+        data.push({ id: `${entry.id}::${model.id}`, object: 'model', owned_by: entry.id });
+      }
+    }
+    return { object: 'list', data };
+  }
+
+  return { harnessModels, currentSelection, chatCompletion, models };
 }
 
-function createService(options, hostBridge) {
+function createService(options, hostBridge, modelBridge) {
   const memo = createMemo();
   const jobs = new Map();
 
@@ -594,6 +839,51 @@ function createService(options, hostBridge) {
     const projectId = String(body.project || '');
     if (!projectId) throw new Error('缺少项目 id');
     return runJson(['model', 'test', '--id', projectId], Math.max(options.cliTimeoutMs, 60000));
+  }
+
+  /** 把控制器路由切到本插件的宿主模型桥：无需 API Key，直接使用 Harness 当前启用的模型。 */
+  async function useHarness(projectId, bridge) {
+    const id = String(projectId || '');
+    if (!id) throw new Error('缺少项目 id');
+    if (!bridge) throw new Error('宿主模型桥不可用');
+    let selection = hostBridge.currentSelection();
+    if (!selection) {
+      const catalog = await hostBridge.harnessModels();
+      const usable = (Array.isArray(catalog.providers) ? catalog.providers : [])
+        .filter((item) => item && Array.isArray(item.models) && item.models.length);
+      if (usable.length) {
+        selection = { provider: usable[0].id, model: usable[0].models[0].id };
+      }
+    }
+    if (!selection) throw new Error('Harness 没有可用的模型选择');
+    let baseUrl;
+    let token;
+    try {
+      const started = await bridge.ensure();
+      baseUrl = started.base_url;
+      token = started.token;
+    } catch (error) {
+      throw new Error(`宿主模型桥启动失败：${error && error.message ? error.message : String(error)}`);
+    }
+    const args = ['model', 'apply', '--id', id,
+      '--provider', 'deepseek',
+      '--model', `${selection.provider}::${selection.model}`,
+      '--base-url', baseUrl,
+      '--credential-env', 'HARNESS_BRIDGE',
+      '--key-stdin'];
+    const controller = await runJson(args, Math.max(options.cliTimeoutMs, 180000), `${token}\n`);
+    memo.clear();
+    return { ok: true, selection, base_url: baseUrl, controller };
+  }
+
+  async function bridgeChat(body) {
+    if (!hostBridge) throw new Error('宿主桥不可用');
+    return hostBridge.chatCompletion(body);
+  }
+
+  async function bridgeModels() {
+    if (!hostBridge) throw new Error('宿主桥不可用');
+    return hostBridge.models();
   }
 
   async function harnessModels(providerFilter) {
@@ -705,6 +995,7 @@ function createService(options, hostBridge) {
   return {
     projects, branches, knowledge, probe, importProject, startSync, job,
     modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
+    useHarness, bridgeChat, bridgeModels,
     listPulls, showPull, health,
   };
 }
@@ -722,6 +1013,38 @@ function createRouteHandler(options, service) {
       const refresh = url.searchParams.get('refresh') === '1';
       const offline = url.searchParams.get('offline') === '1';
       const projectId = url.searchParams.get('project');
+
+      // ---- 宿主模型桥（OpenAI 兼容，供控制器直连；复用 Harness 凭据） ----
+      if (pathname === `${ROUTE_PREFIX}/llm/v1/models`) {
+        try {
+          json(res, 200, await service.bridgeModels());
+        } catch (error) {
+          json(res, 500, { error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
+      if (pathname === `${ROUTE_PREFIX}/llm/v1/chat/completions`) {
+        if (method !== 'POST') {
+          json(res, 405, { error: '只支持 POST' });
+          return;
+        }
+        try {
+          const payload = await readJsonBody(req);
+          json(res, 200, await service.bridgeChat(payload));
+        } catch (error) {
+          json(res, 500, { error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
+      if (pathname === `${ROUTE_PREFIX}/model-config/use-harness` && method === 'POST') {
+        try {
+          const payload = await readJsonBody(req);
+          json(res, 200, await service.useHarness(payload.project, modelBridge));
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
 
       // ---- 模型配置 ---------------------------------------------------
       if (pathname === `${ROUTE_PREFIX}/harness-models`) {
@@ -897,7 +1220,8 @@ function toolDefinition(spec) {
 export function apply(ctx, config) {
   const options = resolveOptions(config);
   const hostBridge = createHostBridge(ctx);
-  const service = createService(options, hostBridge);
+  const modelBridge = createModelBridge(hostBridge, options);
+  const service = createService(options, hostBridge, modelBridge);
 
   // 工具注册（Agent 与页面共用同一服务方法：一个操作，两个调用方）。
   ctx.effect(() => {
@@ -988,6 +1312,28 @@ export function apply(ctx, config) {
         },
       }),
       toolDefinition({
+        name: 'recsdk_use_harness_model',
+        description: 'Point a project\'s controller model route at the Harness host-model bridge so semantic work uses the model currently enabled in DeepSeek Harness, with no API key or manual endpoint. Returns the selection and controller readiness.',
+        parameters: {
+          type: 'object',
+          properties: {
+            project: { type: 'string', description: 'Project id; omitted uses the default project.' },
+          },
+          additionalProperties: false,
+        },
+        async execute(args) {
+          let projectId = args.project ? String(args.project) : null;
+          if (!projectId) {
+            const listed = await service.projects({ refresh: false });
+            projectId = listed && listed.default_project;
+          }
+          if (!projectId) throw new Error('没有已加载的项目');
+          const data = await service.useHarness(projectId, modelBridge);
+          if (data && data.ok === false) throw new Error(data.error || '切换失败');
+          return data;
+        },
+      }),
+      toolDefinition({
         name: 'recsdk_review_health',
         description: 'Report whether the RecSDK project assistant controller is ready (git, node, pinned knowledge tools, GitCode read access, model route). Read-only.',
         parameters: { type: 'object', properties: {}, additionalProperties: false },
@@ -1003,6 +1349,11 @@ export function apply(ctx, config) {
       }
     };
   }, 'recsdk-review: tools');
+
+  // 宿主模型桥的本地监听随插件卸载回收。
+  ctx.effect(() => () => {
+    modelBridge.dispose();
+  }, 'recsdk-review: model bridge');
 
   // 同源 HTTP 路由：只在 Web 组合里注册。
   // 用 ctx.inject 而不是 apply 时的 ctx.get：插件先于 webServer 发布加载，

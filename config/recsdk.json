@@ -3,7 +3,10 @@
   "repo_url": "https://gitcode.com/Ascend/RecSDK_for_lingqu",
   "local_repo": "D:/GRVLLM/ReviewWork/RecSDK_for_lingqu",
   "api_url": "https://api.gitcode.com/api/v5",
-  "branches": ["develop", "refactor/develop"],
+  "branches": [
+    "develop",
+    "refactor/develop"
+  ],
   "state_dir": "../data",
   "curated_knowledge": "recsdk-knowledge.json",
   "poll_seconds": 300,
@@ -13,66 +16,178 @@
   "model_backend": {
     "provider": "deepseek",
     "protocol": "chat_completions",
-    "endpoint_id": "pending-deployment",
-    "base_url": "",
-    "model": "",
-    "credential_env": "DEEPSEEK_API_KEY",
+    "endpoint_id": "127.0.0.1",
+    "base_url": "http://127.0.0.1:55114/v1",
+    "model": "gateway::deepseek-v4.1-flash",
+    "credential_env": "HARNESS_BRIDGE",
     "max_retries": 2,
     "timeout": 1800,
     "max_schema_repairs": 1,
     "task_profiles": {
-      "knowledge": {"reasoning_effort": "medium", "max_tokens": 8192},
-      "review": {"reasoning_effort": "xhigh", "max_tokens": 16384},
-      "feature_design": {"reasoning_effort": "high", "max_tokens": 12288},
-      "feature_delivery": {"reasoning_effort": "high", "max_tokens": 12288},
-      "generic": {"reasoning_effort": "medium", "max_tokens": 8192}
-    }
+      "knowledge": {
+        "reasoning_effort": "medium",
+        "max_tokens": 8192
+      },
+      "review": {
+        "reasoning_effort": "xhigh",
+        "max_tokens": 16384
+      },
+      "feature_design": {
+        "reasoning_effort": "high",
+        "max_tokens": 12288
+      },
+      "feature_delivery": {
+        "reasoning_effort": "high",
+        "max_tokens": 12288
+      },
+      "generic": {
+        "reasoning_effort": "medium",
+        "max_tokens": 8192
+      }
+    },
+    "credential_file": "D:\\GRVLLM\\ReviewWork\\project-assistant\\data\\repositories\\2617dde8c183a171598e\\credentials.json",
+    "credential_key": "HARNESS_BRIDGE"
   },
   "max_file_bytes": 2000000,
   "max_diff_chars": 160000,
-  "exclude": [".ua/**", ".understand-anything/**", "**/3rdparty/**", "**/third_party/**", "**/node_modules/**", "**/__pycache__/**"],
+  "exclude": [
+    ".ua/**",
+    ".understand-anything/**",
+    "**/3rdparty/**",
+    "**/third_party/**",
+    "**/node_modules/**",
+    "**/__pycache__/**"
+  ],
   "domains": {
     "training": {
       "description": "训练数据准备、推荐模型、稀疏/稠密参数及梯度更新流水线",
-      "patterns": ["training/**", "docs/zh/torch/**", "docs/zh/tensorflow/**"],
-      "entrypoints": ["training/benchmark/README.md", "training/benchmark/run.py", "training/torch_rec_v1/torchrec_embcache/README.md"],
-      "depends_on": ["embedding", "communication", "operators", "build"],
-      "tests": ["build/run_presmoke.sh", "training/benchmark/README.md"]
+      "patterns": [
+        "training/**",
+        "docs/zh/torch/**",
+        "docs/zh/tensorflow/**"
+      ],
+      "entrypoints": [
+        "training/benchmark/README.md",
+        "training/benchmark/run.py",
+        "training/torch_rec_v1/torchrec_embcache/README.md"
+      ],
+      "depends_on": [
+        "embedding",
+        "communication",
+        "operators",
+        "build"
+      ],
+      "tests": [
+        "build/run_presmoke.sh",
+        "training/benchmark/README.md"
+      ]
     },
     "embedding": {
       "description": "动态Embedding查找/插入、去重还原、缓存一致性、优化器和Checkpoint",
-      "patterns": ["training/dynamic_emb/**", "training/torch_rec_v1/**", "inference/emb_cache/**", "cust_op/hkv/**"],
-      "entrypoints": ["training/dynamic_emb/AGENTS.md", "training/dynamic_emb/README.md", "inference/emb_cache/README.md"],
-      "depends_on": ["communication", "operators", "build"],
-      "tests": ["training/dynamic_emb/tests/ut/distributed/run_python_ut.sh", "training/dynamic_emb/tests/ut/dynamic_emb_op/run_op_ut.sh"]
+      "patterns": [
+        "training/dynamic_emb/**",
+        "training/torch_rec_v1/**",
+        "inference/emb_cache/**",
+        "cust_op/hkv/**"
+      ],
+      "entrypoints": [
+        "training/dynamic_emb/AGENTS.md",
+        "training/dynamic_emb/README.md",
+        "inference/emb_cache/README.md"
+      ],
+      "depends_on": [
+        "communication",
+        "operators",
+        "build"
+      ],
+      "tests": [
+        "training/dynamic_emb/tests/ut/distributed/run_python_ut.sh",
+        "training/dynamic_emb/tests/ut/dynamic_emb_op/run_op_ut.sh"
+      ]
     },
     "communication": {
       "description": "HCCL/HIXL、分片、All-to-All、rank与shape约定、异步流及同步生命周期",
-      "patterns": ["training/dynamic_emb/dynamic_emb/distributed/**", "training/ha2a_dev/**", "training/recsys-example/**", "cust_op/**/lccl/**"],
-      "entrypoints": ["training/recsys-example/README.md", "training/ha2a_dev/README.MD"],
-      "depends_on": ["build"],
-      "tests": ["training/dynamic_emb/tests/ut/distributed/run_python_ut.sh"]
+      "patterns": [
+        "training/dynamic_emb/dynamic_emb/distributed/**",
+        "training/ha2a_dev/**",
+        "training/recsys-example/**",
+        "cust_op/**/lccl/**"
+      ],
+      "entrypoints": [
+        "training/recsys-example/README.md",
+        "training/ha2a_dev/README.MD"
+      ],
+      "depends_on": [
+        "build"
+      ],
+      "tests": [
+        "training/dynamic_emb/tests/ut/distributed/run_python_ut.sh"
+      ]
     },
     "operators": {
       "description": "AscendC/C++算子、Python绑定、dtype/shape、内存与流同步、精度与性能",
-      "patterns": ["cust_op/**", "training/dynamic_emb/csrc/**"],
-      "entrypoints": ["cust_op/README.md", "cust_op/ascendc_op/build/README.md", "cust_op/framework/torch_plugin/torch_library/hstu/README.md"],
-      "depends_on": ["build"],
-      "tests": ["cust_op/test/", "training/dynamic_emb/tests/ut/dynamic_emb_op/run_op_ut.sh"]
+      "patterns": [
+        "cust_op/**",
+        "training/dynamic_emb/csrc/**"
+      ],
+      "entrypoints": [
+        "cust_op/README.md",
+        "cust_op/ascendc_op/build/README.md",
+        "cust_op/framework/torch_plugin/torch_library/hstu/README.md"
+      ],
+      "depends_on": [
+        "build"
+      ],
+      "tests": [
+        "cust_op/test/",
+        "training/dynamic_emb/tests/ut/dynamic_emb_op/run_op_ut.sh"
+      ]
     },
     "inference": {
       "description": "推理模型适配、embedding/cache、算子图、vLLM版本和吞吐/尾延迟",
-      "patterns": ["inference/**", "docs/zh/performance_tuning.md"],
-      "entrypoints": ["inference/vllm_gr/README.md", "inference/emb_cache/README.md", "docs/zh/performance_tuning.md"],
-      "depends_on": ["embedding", "operators", "communication", "build"],
-      "tests": ["inference/vllm_gr/run/", "docs/zh/performance_tuning.md"]
+      "patterns": [
+        "inference/**",
+        "docs/zh/performance_tuning.md"
+      ],
+      "entrypoints": [
+        "inference/vllm_gr/README.md",
+        "inference/emb_cache/README.md",
+        "docs/zh/performance_tuning.md"
+      ],
+      "depends_on": [
+        "embedding",
+        "operators",
+        "communication",
+        "build"
+      ],
+      "tests": [
+        "inference/vllm_gr/run/",
+        "docs/zh/performance_tuning.md"
+      ]
     },
     "build": {
       "description": "构建打包、框架/CANN/torch-npu版本、patch、配置、环境变量及启动脚本",
-      "patterns": ["build/**", "tools/**", "*.py", "*.sh", "*.ini", "*.xml", "CMakeLists.txt", "contributing.md", "README.md"],
-      "entrypoints": ["contributing.md", "setup.py", "build.sh", "dependency.xml"],
+      "patterns": [
+        "build/**",
+        "tools/**",
+        "*.py",
+        "*.sh",
+        "*.ini",
+        "*.xml",
+        "CMakeLists.txt",
+        "contributing.md",
+        "README.md"
+      ],
+      "entrypoints": [
+        "contributing.md",
+        "setup.py",
+        "build.sh",
+        "dependency.xml"
+      ],
       "depends_on": [],
-      "tests": ["build/run_presmoke.sh"]
+      "tests": [
+        "build/run_presmoke.sh"
+      ]
     }
   },
   "review_rules": [

@@ -309,7 +309,7 @@ async function main() {
     const { ctx, tools, routes } = makeFakeCtx();
     module.apply(ctx, { projectRoot: root, python, cliTimeoutMs: 30000, syncTimeoutMs: 60000 });
 
-    check('注册 6 个 Agent 工具', tools.size === 6, [...tools.keys()].join(','));
+    check('注册 7 个 Agent 工具', tools.size === 7, [...tools.keys()].join(','));
     check('注册前缀路由', routes.length === 1 && routes[0].kind === 'prefix');
 
     const projects = await callRoute(routes, '/recsdk-review/api/projects');
@@ -393,6 +393,21 @@ async function main() {
       { project: 'recsdk' });
     check('POST /model-config/test 返回连通性', Boolean(tested.body && tested.body.ok === true
       && tested.body.model_count === 3));
+
+    // 宿主模型桥：假 ctx 没有 llm 服务，必须明确报错而不是崩溃
+    const bridgeModels = await callRoute(routes, '/recsdk-review/api/llm/v1/models');
+    check('桥接 /models 在无 llm 时安全降级', (bridgeModels.status === 200
+      && Array.isArray(bridgeModels.body && bridgeModels.body.data) && bridgeModels.body.data.length === 0)
+      || (bridgeModels.status === 500 && typeof (bridgeModels.body && bridgeModels.body.error) === 'string'),
+      `${bridgeModels.status}`);
+    const bridgeChat = await callRoute(routes, '/recsdk-review/api/llm/v1/chat/completions', 'POST',
+      { model: 'harness', messages: [{ role: 'user', content: 'hi' }] });
+    check('桥接 chat/completions 无 llm 时返回 500 错误', bridgeChat.status === 500
+      && typeof (bridgeChat.body && bridgeChat.body.error) === 'string');
+    const useHarness = await callRoute(routes, '/recsdk-review/api/model-config/use-harness', 'POST',
+      { project: 'recsdk' });
+    check('use-harness 无宿主模型时返回可读错误', Boolean(useHarness.body && useHarness.body.ok === false
+      && typeof useHarness.body.error === 'string'));
 
     const list = await callRoute(routes, '/recsdk-review/api/pulls?project=recsdk');
     check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 1);

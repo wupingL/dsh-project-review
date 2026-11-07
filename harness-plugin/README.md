@@ -83,21 +83,19 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | POST | `/recsdk-review/api/model-config/test` | 用已保存配置测试连通性（`GET {base_url}/models`），不返回密钥与正文 |
 | POST | `/recsdk-review/api/model-config/credential` | 保存/清除 API Key `{project,api_key}` 或 `{project,clear:true}`，密钥经 stdin 传递 |
 
-## 模型配置页
+## 模型配置页（可直接使用 Harness 当前模型，免配置）
 
-工作区头部「模型配置」打开控制器模型路由页，只保留三项输入，其余由 Harness 目录自动推导：
+**推荐路径：点「使用 Harness 当前模型」按钮，不需要任何 API Key 或手工地址。**
 
-1. **提供方**：只列出控制器可用的 Harness 提供方（有 OpenAI 兼容 `base_url` 且带模型清单）；
-2. **模型**：该提供方的模型列表；
-3. **API Key**：唯一需要手填的字段。
+原理：插件在 `127.0.0.1:55114`（可用 `bridgePort` 配置）起一个**带随机令牌的最小 OpenAI 兼容服务**，
+控制器把 `model_backend.base_url` 指向它；插件收到 `/chat/completions` 后转成宿主 `llm.stream(...)` 调用，
+复用 Harness 当前启用的模型与凭据。令牌持久化在 `<projectRoot>/.harness-bridge-token`（已加入 .gitignore）。
 
-点 **「保存并启用」** 一步完成路由写入 + 密钥落盘（`POST /model-config/apply`，控制器 `model apply`），
-保存后立刻回读就绪状态；**「测试连接」** 用已保存的配置发一次 `GET {base_url}/models`
-（`POST /model-config/test`），只返回状态码、模型数与耗时，不回显密钥或响应正文。
+- 按钮动作：读 `agentDefaultModel.currentSelection()` → 写控制器路由（`provider::model` 标签）→ 写入桥令牌 → 校验就绪 → 跑一次 `/models` 连通性测试。
+- 重启 Harness 后端口与令牌保持不变，已保存的路由继续可用；端口被占用时会退回临时端口（需重新点一次）。
+- 手动路径（可选）：提供方 + 模型 + API Key 直连某个 OpenAI 兼容网关，作为桥不可用时的兜底。
 
-- `base_url` / 端点标识 / 凭据变量名全部自动推导，页面不再展示；protocol 固定 `chat_completions`。
-- 密钥经 stdin 交给控制器，写入项目状态目录的 `credentials.json`（0600），项目配置只记录文件路径与键名。
-- 未暴露 OpenAI 兼容地址的提供方（如官方 DeepSeek 平台路由）不会出现在可选列表中。
+切换路由后，控制器的语义身份（policy）会变化，旧知识快照会显示为需要更新——这是预期行为。
 
 ## 交互约定
 

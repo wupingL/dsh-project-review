@@ -221,6 +221,10 @@ window.__ModuleLoader__.load({
       'settings.testFailed': '连接失败',
       'settings.testSkipped': '未测试',
       'settings.keyAlready': '已保存（留空则不修改）',
+      'settings.currentModel': 'Harness 当前启用的模型',
+      'settings.useHarness': '使用 Harness 当前模型（免配置）',
+      'settings.useHarnessHint': '直接把控制器路由指向本插件内置的宿主模型桥，复用 Harness 的模型与凭据，无需填写任何 API Key。',
+      'settings.orManual': '或手动指定提供方',
       'settings.back': '返回',
       'settings.incompatibleHint': '该提供方未提供 OpenAI 兼容地址，请手动填写',
       'settings.apiKey': 'API Key（仅此项需要填写）',
@@ -441,6 +445,10 @@ window.__ModuleLoader__.load({
       'settings.testFailed': 'Connection failed',
       'settings.testSkipped': 'Not tested',
       'settings.keyAlready': 'Saved (empty keeps it)',
+      'settings.currentModel': 'Model currently enabled in Harness',
+      'settings.useHarness': 'Use the Harness model (no setup)',
+      'settings.useHarnessHint': 'Points the controller at this plugin\'s host-model bridge, reusing the Harness model and credentials; no API key needed.',
+      'settings.orManual': 'Or pick a provider manually',
       'settings.back': 'Back',
       'settings.incompatibleHint': 'This provider exposes no OpenAI-compatible base URL; enter one manually',
       'settings.apiKey': 'API key (the only field you need to fill)',
@@ -1304,6 +1312,20 @@ window.__ModuleLoader__.load({
   gap: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.rr-page .rr-settings-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 10.5px;
+}
+.rr-page .rr-settings-divider::before,
+.rr-page .rr-settings-divider::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--dsw-alias-border-l1);
 }
 .rr-page .rr-settings-status { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .rr-page .rr-settings-status .is-ok { color: #1f9d55; }
@@ -2433,6 +2455,7 @@ window.__ModuleLoader__.load({
       const [loading, setLoading] = React.useState(true);
       const [error, setError] = React.useState('');
       const [providers, setProviders] = React.useState([]);
+      const [harnessCurrent, setHarnessCurrent] = React.useState(null);
       const [provider, setProvider] = React.useState('');
       const [model, setModel] = React.useState('');
       const [apiKey, setApiKey] = React.useState('');
@@ -2453,6 +2476,7 @@ window.__ModuleLoader__.load({
             ]);
             if (!active) return;
             const catalog = isObject(values[0]) && Array.isArray(values[0].providers) ? values[0].providers : [];
+            setHarnessCurrent(isObject(values[0]) && isObject(values[0].current) ? values[0].current : null);
             const usable = catalog.filter(function (item) {
               return isObject(item) && item.base_url && Array.isArray(item.models) && item.models.length > 0;
             });
@@ -2492,6 +2516,26 @@ window.__ModuleLoader__.load({
         setProvider(nextProvider);
         const found = providers.filter(function (item) { return item.id === nextProvider; })[0];
         if (found && Array.isArray(found.models) && found.models.length) setModel(asText(found.models[0].id, ''));
+      }
+
+      async function useHarnessModel() {
+        setSaving(true);
+        setError('');
+        try {
+          const data = await postJSON(API_BASE + '/model-config/use-harness', { project: props.projectId });
+          if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
+          const controller = isObject(data) && isObject(data.controller) ? data.controller : null;
+          const merged = {
+            ...((await fetchJSON(API_BASE + '/model-config?project=' + encodeURIComponent(String(props.projectId || '')), undefined).catch(function () { return null; })) || {}),
+            test: controller && isObject(controller.test) ? controller.test : null,
+          };
+          setResult(merged);
+          if (controller && isObject(controller.selection)) setHarnessCurrent(controller.selection);
+        } catch (useError) {
+          setError(errorText(useError));
+        } finally {
+          setSaving(false);
+        }
       }
 
       async function apply() {
@@ -2545,6 +2589,21 @@ window.__ModuleLoader__.load({
               icon: AlertIcon({ size: 22 }), title: t('projects.errorTitle'), hint: error,
             }))
             : h('div', { className: 'rr-settings-card' },
+              h('div', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.currentModel')),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+                  h('span', { className: 'rr-muted', style: { fontSize: '11.5px' } },
+                    harnessCurrent
+                      ? (asText(harnessCurrent.provider, '') + ' :: ' + asText(harnessCurrent.model, ''))
+                      : t('settings.harnessUnavailable')),
+                  h('button', {
+                    type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm',
+                    onClick: useHarnessModel, disabled: saving,
+                  }, saving ? t('settings.saving') : t('settings.useHarness')),
+                  h('span', { className: 'rr-field-hint' }, t('settings.useHarnessHint'))
+                )
+              ),
+              h('div', { className: 'rr-settings-divider' }, t('settings.orManual')),
               providers.length === 0
                 ? h('div', { className: 'rr-form-error' }, t('settings.noProvider'))
                 : null,

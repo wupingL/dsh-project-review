@@ -4,3 +4,4 @@ vendor/
 .venv/
 __pycache__/
 *.egg-info/
+.harness-bridge-token

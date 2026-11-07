@@ -223,6 +223,9 @@ window.__ModuleLoader__.load({
       'settings.keySaved': 'API Key 已保存',
       'settings.keyCleared': 'API Key 已清除',
       'settings.autoFilled': '提供方、模型、接口地址与凭据变量已按 Harness 配置自动填写',
+      'settings.savedRoute': '已保存路由',
+      'settings.needModel': '请填写或选择模型',
+      'settings.needBaseUrl': '请填写接口地址（https）',
     };
 
     const EN = {
@@ -433,6 +436,9 @@ window.__ModuleLoader__.load({
       'settings.keySaved': 'API key saved',
       'settings.keyCleared': 'API key cleared',
       'settings.autoFilled': 'Provider, model, base URL and credential variable are filled from the Harness configuration',
+      'settings.savedRoute': 'Saved route',
+      'settings.needModel': 'Choose or enter a model',
+      'settings.needBaseUrl': 'Enter a base URL (https)',
     };
 
     const CSS = `
@@ -2441,14 +2447,38 @@ window.__ModuleLoader__.load({
             const configValue = isObject(results[1]) ? results[1] : null;
             setHarness(harnessValue);
             setConfig(configValue);
-            if (configValue && isObject(configValue.model_backend)) {
-              const backend = configValue.model_backend;
-              setProvider(asText(backend.provider, 'deepseek'));
-              setModel(asText(backend.model, ''));
-              setBaseUrl(asText(backend.base_url, ''));
-              setEndpointId(asText(backend.endpoint_id, ''));
-              setCredentialEnv(asText(backend.credential_env, 'DEEPSEEK_API_KEY'));
+            const available = harnessValue && Array.isArray(harnessValue.providers)
+              ? harnessValue.providers.filter(isObject)
+              : [];
+            const saved = configValue && isObject(configValue.model_backend) ? configValue.model_backend : {};
+            const savedProvider = asText(saved.provider, '');
+            const savedModel = asText(saved.model, '');
+            const savedBase = asText(saved.base_url, '');
+            const savedEndpoint = asText(saved.endpoint_id, '');
+            const savedEnv = asText(saved.credential_env, '');
+            const usable = available.filter(function (item) {
+              return Array.isArray(item.models) && item.models.length > 0;
+            });
+            // 保存的路由有效时沿用；否则优先挑一个带 OpenAI 兼容地址的提供方，自动补全其余字段。
+            let chosen = available.filter(function (item) { return item.id === savedProvider; })[0] || null;
+            if (!chosen || !savedBase || !savedModel) {
+              const preferred = usable.filter(function (item) { return item.open_ai_compatible === true; })[0]
+                || usable[0]
+                || available[0]
+                || null;
+              if (preferred) chosen = preferred;
             }
+            const fallbackBase = chosen && chosen.base_url ? asText(chosen.base_url, '') : '';
+            const fallbackModel = chosen && Array.isArray(chosen.models) && chosen.models.length
+              ? asText(chosen.models[0].id, '')
+              : '';
+            const fallbackEnv = chosen && chosen.credential_env ? asText(chosen.credential_env, '') : '';
+            setProvider(chosen ? chosen.id : (savedProvider || 'deepseek'));
+            setModel(savedModel || fallbackModel);
+            setBaseUrl(savedBase || fallbackBase);
+            // 'pending-deployment' 只是占位；留空让控制器按 base_url 主机名推导。
+            setEndpointId(savedEndpoint === 'pending-deployment' ? '' : savedEndpoint);
+            setCredentialEnv(savedEnv || fallbackEnv || 'DEEPSEEK_API_KEY');
           } catch (loadError) {
             if (!active || controller.signal.aborted) return;
             setError(errorText(loadError));
@@ -2487,30 +2517,69 @@ window.__ModuleLoader__.load({
         setMessage('');
       }
 
-      async function save() {
+      async function reloadConfig() {
+        try {
+          const data = await fetchJSON(API_BASE + '/model-config?project=' + encodeURIComponent(String(props.projectId || '')), undefined);
+          if (isObject(data)) setConfig(data);
+        } catch (ignored) {
+          /* 保留旧状态，由 message 提示 */
+        }
+      }
+
+      async function saveRoute() {
         if (!model.trim()) {
-          setMessage(t('settings.notReady'));
+          setMessage(t('settings.needModel'));
+          return false;
+        }
+        if (!baseUrl.trim()) {
+          setMessage(t('settings.needBaseUrl'));
+          return false;
+        }
+        const data = await postJSON(API_BASE + '/model-config', {
+          project: props.projectId,
+          provider: provider,
+          model: model.trim(),
+          base_url: baseUrl.trim(),
+          endpoint_id: endpointId.trim() || undefined,
+          protocol: 'chat_completions',
+          credential_env: credentialEnv.trim() || undefined,
+        });
+        if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
+        if (isObject(data)) setConfig(data);
+        return true;
+      }
+
+      /** 主按钮：先保存路由，再（如有输入）保存 API Key，最后回读真实就绪状态。 */
+      async function saveAll(requireKey) {
+        if (requireKey && !apiKey.trim()) {
+          setKeyMessage(t('settings.apiKey'));
           return;
         }
         setSaving(true);
+        setSavingKey(true);
         setMessage('');
+        setKeyMessage('');
         try {
-          const data = await postJSON(API_BASE + '/model-config', {
-            project: props.projectId,
-            provider: provider,
-            model: model.trim(),
-            base_url: baseUrl.trim() || undefined,
-            endpoint_id: endpointId.trim() || undefined,
-            protocol: 'chat_completions',
-            credential_env: credentialEnv.trim() || undefined,
-          });
-          if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
-          if (isObject(data)) setConfig(data);
+          const savedRoute = await saveRoute();
+          if (!savedRoute) return;
+          if (apiKey.trim()) {
+            const data = await postJSON(API_BASE + '/model-config/credential', {
+              project: props.projectId,
+              api_key: apiKey.trim(),
+            });
+            if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
+            setApiKey('');
+            setKeyMessage(t('settings.keySaved'));
+          }
+          await reloadConfig();
           setMessage(t('settings.saved'));
         } catch (saveError) {
-          setMessage(errorText(saveError));
+          const text = errorText(saveError);
+          setMessage(text);
+          setKeyMessage(text);
         } finally {
           setSaving(false);
+          setSavingKey(false);
         }
       }
 
@@ -2643,6 +2712,14 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'rr-muted', style: { fontSize: '11.5px' } }, 'chat_completions')
               ),
               h('div', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.savedRoute')),
+                h('span', { className: 'rr-muted', style: { fontSize: '11.5px', overflowWrap: 'anywhere' } },
+                  (function () {
+                    const saved = config && isObject(config.model_backend) ? config.model_backend : {};
+                    return [asText(saved.provider, '—'), asText(saved.model, '—'), asText(saved.base_url, '—')].join(' · ');
+                  })())
+              ),
+              h('div', { className: 'rr-settings-row' },
                 h('span', { className: 'rr-settings-label' }, t('settings.apiKey')),
                 h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
                   h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
@@ -2657,7 +2734,7 @@ window.__ModuleLoader__.load({
                     }),
                     h('button', {
                       type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm',
-                      onClick: function () { saveCredential(false); },
+                      onClick: function () { saveAll(true); },
                       disabled: savingKey || !apiKey.trim(),
                     }, savingKey ? t('settings.saving') : t('settings.saveKey')),
                     h('button', {
@@ -2691,7 +2768,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'rr-settings-foot' },
                 message ? h('span', { className: 'rr-muted', style: { marginRight: 'auto' } }, message) : null,
                 h('button', {
-                  type: 'button', className: 'rr-btn rr-btn-primary', onClick: save, disabled: saving,
+                  type: 'button', className: 'rr-btn rr-btn-primary', onClick: function () { saveAll(false); }, disabled: saving,
                 }, saving ? t('settings.saving') : t('settings.save'))
               )
             )

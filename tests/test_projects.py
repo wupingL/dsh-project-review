@@ -105,6 +105,7 @@ class ProjectRegistryTests(unittest.TestCase):
             config_value = read_json(self.config_dir / (project_id + ".json"))
             self.assertEqual(config_value["domains"], {})
             self.assertIn("model_backend", config_value)
+            self.assertNotIn("credential_file", config_value["model_backend"])
 
             again = projects.import_project("other-name", "https://gitcode.com/demo/demo-repo")
             self.assertFalse(again["created"])

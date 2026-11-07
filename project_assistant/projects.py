@@ -323,7 +323,10 @@ def import_project(name, url, local=None, branches=None):
     if local:
         value["local_repo"] = Path(local).resolve().as_posix()
     if isinstance(template.get("model_backend"), dict):
-        value["model_backend"] = template["model_backend"]
+        # 只复用路由参数；凭据文件路径属于原项目的状态目录，绝不能跨项目复制。
+        backend = {key: value for key, value in template["model_backend"].items()
+                   if key not in {"credential_file", "credential_key"}}
+        value["model_backend"] = backend
     config_path = CONFIG_DIR / (project_id + ".json")
     atomic_json(config_path, value)
     registry = load_registry()

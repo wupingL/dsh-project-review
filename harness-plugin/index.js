@@ -363,7 +363,131 @@ function json(res, status, value) {
   res.end(body);
 }
 
-function createService(options) {
+function createHostBridge(ctx) {
+  function service(key) {
+    try {
+      return typeof ctx.get === 'function' ? ctx.get(key) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function pickPath(value, pathParts) {
+    let current = value;
+    for (const part of Array.isArray(pathParts) ? pathParts : []) {
+      if (current === null || typeof current !== 'object') return undefined;
+      current = current[part];
+    }
+    return current;
+  }
+
+  /** 枚举 DeepSeek Harness 已配置的模型路由，供控制器模型配置页做默认选项。 */
+  async function harnessModels() {
+    const llm = service('llm');
+    if (!llm || typeof llm.listProviders !== 'function') {
+      return { available: false, providers: [], reason: '宿主未提供 llm 服务' };
+    }
+    let providers = [];
+    try {
+      providers = await llm.listProviders();
+    } catch (error) {
+      return { available: false, providers: [], reason: error && error.message ? error.message : String(error) };
+    }
+    let configurable = [];
+    try {
+      configurable = typeof llm.listConfigurableProviders === 'function'
+        ? await llm.listConfigurableProviders()
+        : [];
+    } catch {
+      configurable = [];
+    }
+    const settings = service('settings');
+    let descriptors = [];
+    try {
+      descriptors = settings && typeof settings.describe === 'function'
+        ? settings.describe({ redactSecrets: true })
+        : [];
+    } catch {
+      descriptors = [];
+    }
+    const byNamespace = new Map();
+    for (const descriptor of Array.isArray(descriptors) ? descriptors : []) {
+      byNamespace.set(String(descriptor.ns), descriptor);
+    }
+    const configByProvider = new Map();
+    for (const entry of Array.isArray(configurable) ? configurable : []) {
+      configByProvider.set(entry.provider, entry);
+    }
+    const items = [];
+    for (const provider of Array.isArray(providers) ? providers : []) {
+      let models = [];
+      try {
+        models = await llm.listModels(provider.id);
+      } catch {
+        models = [];
+      }
+      const config = configByProvider.get(provider.id) || null;
+      let baseUrl = config && config.defaultBaseURL ? config.defaultBaseURL : null;
+      let credentialEnv = null;
+      if (config && config.nativeAuth && Array.isArray(config.nativeAuth.env) && config.nativeAuth.env.length) {
+        credentialEnv = config.nativeAuth.env[0];
+      }
+      let settingsValue = null;
+      let api = null;
+      if (config && config.settingsNs && byNamespace.has(String(config.settingsNs))) {
+        const descriptor = byNamespace.get(String(config.settingsNs));
+        settingsValue = descriptor.value ?? null;
+        const configuredBase = pickPath(descriptor.value, config.settingsPath);
+        if (typeof configuredBase === 'string' && configuredBase) baseUrl = configuredBase;
+        // llm-pi-ai 一类提供方把具体路由放在 providers.<id> 下。
+        if (settingsValue && typeof settingsValue === 'object') {
+          const table = settingsValue.providers && typeof settingsValue.providers === 'object'
+            ? settingsValue.providers
+            : null;
+          const entry = table
+            ? (table[provider.id] || Object.values(table)[0] || null)
+            : null;
+          if (entry && typeof entry === 'object') {
+            if (typeof entry.baseURL === 'string' && entry.baseURL) baseUrl = entry.baseURL;
+            if (typeof entry.apiKeyEnv === 'string' && entry.apiKeyEnv) credentialEnv = entry.apiKeyEnv;
+            if (typeof entry.api === 'string' && entry.api) api = entry.api;
+          }
+          if (!credentialEnv && typeof settingsValue.apiKeyEnv === 'string') credentialEnv = settingsValue.apiKeyEnv;
+          if (!api && typeof settingsValue.api === 'string') api = settingsValue.api;
+        }
+      }
+      const openAICompatible = provider.id === 'deepseek-official' || provider.id === 'deepseek-account'
+        ? false
+        : Boolean(baseUrl);
+      items.push({
+        id: provider.id,
+        name: provider.name,
+        models: (Array.isArray(models) ? models : []).map((model) => ({
+          id: model.id,
+          name: model.name || model.id,
+          context_window: model.context && model.context.contextWindow ? model.context.contextWindow : null,
+        })),
+        base_url: baseUrl,
+        api: api,
+        open_ai_compatible: openAICompatible,
+        credential_env: credentialEnv,
+        base_url_env: config && Array.isArray(config.baseURLEnv) ? config.baseURLEnv : null,
+        settings_ns: config ? config.settingsNs : null,
+        native_auth: config && config.nativeAuth ? config.nativeAuth : null,
+        settings_value: null,
+      });
+    }
+    return {
+      available: true,
+      providers: items,
+      note: '模型清单来自 DeepSeek Harness 已配置的 llm 路由；凭据由宿主/环境变量持有，本页只保存路由与模型名。',
+    };
+  }
+
+  return { harnessModels };
+}
+
+function createService(options, hostBridge) {
   const memo = createMemo();
   const jobs = new Map();
 
@@ -371,6 +495,37 @@ function createService(options) {
     const run = await runCli(options, args, timeoutMs);
     if (!run.ok) throw new Error(run.error || '控制器不可用');
     return run.data;
+  }
+
+  async function modelShow(projectId) {
+    const args = [];
+    if (projectId) args.push('--project', String(projectId));
+    args.push('model', 'show', '--id', String(projectId || ''));
+    return runJson(args, options.cliTimeoutMs);
+  }
+
+  async function modelSet(payload) {
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const projectId = String(body.project || '');
+    if (!projectId) throw new Error('缺少项目 id');
+    if (!body.provider) throw new Error('缺少 provider');
+    if (!body.model) throw new Error('缺少 model');
+    const args = ['model', 'set', '--id', projectId, '--provider', String(body.provider),
+      '--model', String(body.model)];
+    if (body.base_url) args.push('--base-url', String(body.base_url));
+    if (body.endpoint_id) args.push('--endpoint-id', String(body.endpoint_id));
+    if (body.protocol) args.push('--protocol', String(body.protocol));
+    if (body.credential_env) args.push('--credential-env', String(body.credential_env));
+    const data = await runJson(args, options.cliTimeoutMs);
+    memo.clear();
+    return data;
+  }
+
+  async function harnessModels(providerFilter) {
+    if (!hostBridge) return { available: false, providers: [], reason: '宿主桥不可用' };
+    const data = await hostBridge.harnessModels();
+    if (!providerFilter || !Array.isArray(data.providers)) return data;
+    return { ...data, providers: data.providers.filter((item) => item.id === providerFilter) };
   }
 
   async function projects({ refresh = false } = {}) {
@@ -474,6 +629,7 @@ function createService(options) {
 
   return {
     projects, branches, knowledge, probe, importProject, startSync, job,
+    modelShow, modelSet, harnessModels,
     listPulls, showPull, health,
   };
 }
@@ -491,6 +647,29 @@ function createRouteHandler(options, service) {
       const refresh = url.searchParams.get('refresh') === '1';
       const offline = url.searchParams.get('offline') === '1';
       const projectId = url.searchParams.get('project');
+
+      // ---- 模型配置 ---------------------------------------------------
+      if (pathname === `${ROUTE_PREFIX}/harness-models`) {
+        json(res, 200, await service.harnessModels());
+        return;
+      }
+      if (pathname === `${ROUTE_PREFIX}/model-config` && method !== 'POST') {
+        try {
+          json(res, 200, await service.modelShow(projectId));
+        } catch (error) {
+          json(res, 200, { error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
+      if (pathname === `${ROUTE_PREFIX}/model-config` && method === 'POST') {
+        try {
+          const payload = await readJsonBody(req);
+          json(res, 200, await service.modelSet(payload));
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
 
       // ---- 项目与知识库 -------------------------------------------------
       if (pathname === `${ROUTE_PREFIX}/projects` && method !== 'POST') {
@@ -615,7 +794,8 @@ function toolDefinition(spec) {
 
 export function apply(ctx, config) {
   const options = resolveOptions(config);
-  const service = createService(options);
+  const hostBridge = createHostBridge(ctx);
+  const service = createService(options, hostBridge);
 
   // 工具注册（Agent 与页面共用同一服务方法：一个操作，两个调用方）。
   ctx.effect(() => {
@@ -689,6 +869,20 @@ export function apply(ctx, config) {
           }
           if (!projectId) throw new Error('没有已加载的项目');
           return service.knowledge(projectId, String(args.ref), { refresh: args.refresh === true });
+        },
+      }),
+      toolDefinition({
+        name: 'recsdk_harness_models',
+        description: 'List the model providers and models already configured in DeepSeek Harness (with base-URL hints and credential env names), so a controller model route can reference them. Read-only; never returns secret values.',
+        parameters: {
+          type: 'object',
+          properties: {
+            provider: { type: 'string', description: 'Only return this provider id, e.g. gateway.' },
+          },
+          additionalProperties: false,
+        },
+        async execute(args) {
+          return service.harnessModels(args.provider ? String(args.provider) : null);
         },
       }),
       toolDefinition({

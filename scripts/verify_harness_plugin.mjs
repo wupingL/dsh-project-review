@@ -98,6 +98,32 @@ elif args[:1] == ['knowledge'] and 'sync' in args:
           "commit": "abc1234def", "status": "complete", "stats": {}, "refreshed_domains": ["a"],
           "manifest_path": "state/snapshots/s2/manifest.json", "duration_seconds": 0.1,
           "published": True})
+elif args[:1] == ['model'] and 'show' in args:
+    emit({"project_id": "recsdk", "config_path": "config/recsdk.json",
+          "model_backend": {"provider": "deepseek", "protocol": "chat_completions",
+                            "endpoint_id": "pending-deployment", "base_url": "", "model": "",
+                            "credential_env": "DEEPSEEK_API_KEY"},
+          "destination": {"provider": "deepseek", "model": None,
+                          "credential": {"present": False, "required": True, "env": "DEEPSEEK_API_KEY"}},
+          "ready": False,
+          "checks": {"model_provider": True, "model_endpoint": False, "model_name": False,
+                     "model_credential": False},
+          "errors": {"model_endpoint": "model_backend.base_url is not configured"},
+          "secrets_policy": "no secrets"})
+elif args[:1] == ['model'] and 'set' in args:
+    model = args[args.index('--model') + 1]
+    base = args[args.index('--base-url') + 1] if '--base-url' in args else ''
+    emit({"project_id": "recsdk", "config_path": "config/recsdk.json",
+          "model_backend": {"provider": "deepseek", "protocol": "chat_completions",
+                            "endpoint_id": "api.deepseek.com", "base_url": base, "model": model,
+                            "credential_env": "DEEPSEEK_API_KEY"},
+          "destination": {"provider": "deepseek", "model": model,
+                          "credential": {"present": False, "required": True, "env": "DEEPSEEK_API_KEY"}},
+          "ready": False,
+          "checks": {"model_provider": True, "model_endpoint": True, "model_name": True,
+                     "model_credential": False},
+          "errors": {"model_credential": "credential is missing"},
+          "secrets_policy": "no secrets"})
 elif 'list' in args:
     emit({"generated_at": "2026-11-07T00:00:00+00:00",
           "repo": {"url": "https://gitcode.com/Ascend/RecSDK_for_lingqu",
@@ -251,7 +277,7 @@ async function main() {
     const { ctx, tools, routes } = makeFakeCtx();
     module.apply(ctx, { projectRoot: root, python, cliTimeoutMs: 30000, syncTimeoutMs: 60000 });
 
-    check('注册 5 个 Agent 工具', tools.size === 5, [...tools.keys()].join(','));
+    check('注册 6 个 Agent 工具', tools.size === 6, [...tools.keys()].join(','));
     check('注册前缀路由', routes.length === 1 && routes[0].kind === 'prefix');
 
     const projects = await callRoute(routes, '/recsdk-review/api/projects');
@@ -296,6 +322,20 @@ async function main() {
     const missingJob = await callRoute(routes, '/recsdk-review/api/jobs/nope');
     check('未知任务 404', missingJob.status === 404, String(missingJob.status));
 
+    const harnessModels = await callRoute(routes, '/recsdk-review/api/harness-models');
+    check('GET /harness-models 200', harnessModels.status === 200 && Boolean(harnessModels.body));
+    check('无 llm 服务时明确降级', harnessModels.body.available === false && typeof harnessModels.body.reason === 'string');
+
+    const modelConfig = await callRoute(routes, '/recsdk-review/api/model-config?project=recsdk');
+    check('GET /model-config 200', Boolean(modelConfig.body && modelConfig.body.model_backend));
+    check('模型配置返回就绪检查', Boolean(modelConfig.body && modelConfig.body.checks && modelConfig.body.ready === false));
+
+    const modelSaved = await callRoute(routes, '/recsdk-review/api/model-config', 'POST',
+      { project: 'recsdk', provider: 'deepseek', model: 'deepseek-chat', base_url: 'https://api.deepseek.com/v1' });
+    check('POST /model-config 保存路由', Boolean(modelSaved.body && modelSaved.body.model_backend
+      && modelSaved.body.model_backend.model === 'deepseek-chat'));
+    check('保存结果不含凭据值', Boolean(modelSaved.body && !JSON.stringify(modelSaved.body).includes('sk-')));
+
     const list = await callRoute(routes, '/recsdk-review/api/pulls?project=recsdk');
     check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 1);
 
@@ -310,6 +350,10 @@ async function main() {
     const projectsTool = tools.get('recsdk_projects');
     const toolProjects = await projectsTool.execute({});
     check('工具 recsdk_projects 可执行', Boolean(toolProjects && toolProjects.default_project === 'recsdk'));
+
+    const harnessTool = tools.get('recsdk_harness_models');
+    const toolHarness = await harnessTool.execute({});
+    check('工具 recsdk_harness_models 可执行', Boolean(toolHarness && toolHarness.available === false));
 
     const knowledgeTool = tools.get('recsdk_knowledge_status');
     const toolKnowledge = await knowledgeTool.execute({ ref: 'develop' });

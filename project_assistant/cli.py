@@ -12,8 +12,8 @@ from .context import Context
 from .feature import Features
 from .gitcode import GitCode
 from .inspect import list_pulls, show_pull
-from .projects import (import_project, knowledge_status, list_projects, probe,
-                       project_branches, resolve_config, sync_knowledge)
+from .projects import (import_project, knowledge_status, list_projects, model_set,
+                       model_show, probe, project_branches, resolve_config, sync_knowledge)
 from .review import Reviews
 
 
@@ -82,6 +82,18 @@ def main(argv=None):
     ksync.add_argument("--ref", required=True)
     ksync.add_argument("--structural", action="store_true")
     ksync.add_argument("--fetch", action="store_true")
+    model = commands.add_parser("model").add_subparsers(dest="action", required=True)
+    mshow = model.add_parser("show")
+    mshow.add_argument("--id", required=True)
+    mset = model.add_parser("set")
+    mset.add_argument("--id", required=True)
+    mset.add_argument("--provider", required=True, choices=["deepseek", "codex"])
+    mset.add_argument("--model", required=True)
+    mset.add_argument("--base-url")
+    mset.add_argument("--endpoint-id")
+    mset.add_argument("--protocol")
+    mset.add_argument("--credential-env")
+    mset.add_argument("--credential-file")
     context = commands.add_parser("context").add_subparsers(dest="action", required=True)
     sync = context.add_parser("sync")
     sync.add_argument("--ref", required=True)
@@ -137,6 +149,16 @@ def main(argv=None):
                                         mode="structural" if args.structural else "semantic",
                                         fetch=args.fetch,
                                         progress=lambda kind, message: print(message, file=sys.stderr, flush=True))
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "model":
+            if args.action == "show":
+                result = model_show(args.id)
+            else:
+                result = model_set(args.id, provider=args.provider, model=args.model,
+                                   base_url=args.base_url, endpoint_id=args.endpoint_id,
+                                   protocol=args.protocol, credential_env=args.credential_env,
+                                   credential_file=args.credential_file)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         config = resolve_config(args.config, args.project)[0]

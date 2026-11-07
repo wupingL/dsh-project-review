@@ -191,6 +191,31 @@ window.__ModuleLoader__.load({
       'aria.branch': '切换分支',
       'aria.knowledge': '知识库状态',
       'aria.close': '关闭',
+      'action.model': '模型配置',
+      'knowledge.hideLogs': '收起同步日志',
+      'knowledge.showLogs': '查看同步日志',
+      'settings.title': '控制器模型配置',
+      'settings.sub': '从 DeepSeek Harness 已配置的模型中选择，写入控制器使用的路由；凭据仍由环境变量或凭证文件提供。',
+      'settings.harnessProvider': 'Harness 提供方',
+      'settings.harnessModel': '模型',
+      'settings.modelOverride': '或手动填写模型名',
+      'settings.baseUrl': '接口地址',
+      'settings.baseUrlHint': 'OpenAI 兼容接口的基地址（https），例如 https://api.deepseek.com/v1',
+      'settings.endpointId': '端点标识',
+      'settings.credentialEnv': '凭据环境变量',
+      'settings.protocol': '协议',
+      'settings.save': '保存配置',
+      'settings.saving': '保存中…',
+      'settings.saved': '已保存',
+      'settings.loading': '正在读取模型列表…',
+      'settings.ready': '模型路由已就绪',
+      'settings.notReady': '模型路由未就绪',
+      'settings.credential': '凭据',
+      'settings.present': '已提供',
+      'settings.missing': '缺失',
+      'settings.harnessUnavailable': 'Harness 模型清单不可用：{reason}',
+      'settings.back': '返回',
+      'settings.incompatibleHint': '该提供方未提供 OpenAI 兼容地址，请手动填写',
     };
 
     const EN = {
@@ -369,6 +394,31 @@ window.__ModuleLoader__.load({
       'aria.branch': 'Switch branch',
       'aria.knowledge': 'Knowledge base status',
       'aria.close': 'Close',
+      'action.model': 'Model route',
+      'knowledge.hideLogs': 'Hide sync log',
+      'knowledge.showLogs': 'Show sync log',
+      'settings.title': 'Controller model route',
+      'settings.sub': 'Pick a model already configured in DeepSeek Harness and store the route the controller uses; credentials still come from the environment or a credential file.',
+      'settings.harnessProvider': 'Harness provider',
+      'settings.harnessModel': 'Model',
+      'settings.modelOverride': 'Or type a model id',
+      'settings.baseUrl': 'Base URL',
+      'settings.baseUrlHint': 'OpenAI-compatible base URL (https), e.g. https://api.deepseek.com/v1',
+      'settings.endpointId': 'Endpoint id',
+      'settings.credentialEnv': 'Credential env var',
+      'settings.protocol': 'Protocol',
+      'settings.save': 'Save',
+      'settings.saving': 'Saving…',
+      'settings.saved': 'Saved',
+      'settings.loading': 'Loading models…',
+      'settings.ready': 'Model route ready',
+      'settings.notReady': 'Model route not ready',
+      'settings.credential': 'Credential',
+      'settings.present': 'present',
+      'settings.missing': 'missing',
+      'settings.harnessUnavailable': 'Harness model catalog unavailable: {reason}',
+      'settings.back': 'Back',
+      'settings.incompatibleHint': 'This provider exposes no OpenAI-compatible base URL; enter one manually',
     };
 
     const CSS = `
@@ -1192,6 +1242,70 @@ window.__ModuleLoader__.load({
 .rr-page .rr-branch-picker { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow: auto; }
 .rr-page .rr-chip.is-on { background: var(--dsw-alias-bg-layer-3); border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary); }
 .rr-page .rr-form-error { color: var(--rr-critical); font-size: 11.5px; overflow-wrap: anywhere; }
+.rr-page .rr-settings {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 20px 28px;
+  background: var(--dsw-alias-bg-base);
+}
+.rr-page .rr-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.rr-page .rr-settings-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.rr-page .rr-settings-sub { margin-top: 2px; color: var(--dsw-alias-label-tertiary); font-size: 11.5px; }
+.rr-page .rr-settings-card {
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.rr-page .rr-settings-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; }
+.rr-page .rr-settings-label { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.rr-page .rr-settings-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.rr-page .rr-settings-status { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.rr-page .rr-settings-status .is-ok { color: #1f9d55; }
+.rr-page .rr-settings-status .is-warn { color: var(--rr-high); }
+.rr-page .rr-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+.rr-page .rr-badge.is-ok { border-color: #1f9d55; color: #1f9d55; }
+.rr-page .rr-badge.is-warn { border-color: var(--rr-high); color: var(--rr-high); }
+.rr-page .rr-knowledge-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.rr-page .rr-log-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.rr-page .rr-log-close:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.rr-page .rr-log-toggle { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-link); font: inherit; font-size: 11px; cursor: pointer; }
+.rr-page .rr-log-toggle:hover { text-decoration: underline; }
+@media (max-width: 700px) {
+  .rr-page .rr-settings-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
 @media (max-width: 900px) {
   .rr-page .rr-body { grid-template-columns: minmax(0, 1fr); }
   .rr-page .rr-listpane { border-right: 0; }
@@ -2033,7 +2147,9 @@ window.__ModuleLoader__.load({
       const reason = asText(knowledge && knowledge.semantic_reason, '');
       const running = Boolean(props.job && props.job.status === 'running');
       const job = isObject(props.job) ? props.job : null;
-      const progress = job && Array.isArray(job.progress) ? job.progress.slice(-8) : [];
+      const allProgress = job && Array.isArray(job.progress) ? job.progress : [];
+      const logsOpen = props.logsOpen !== false;
+      const progress = logsOpen ? allProgress.slice(-8) : [];
       const disabled = props.loading || running;
       const mode = info ? info.label : '';
       return h('section', { className: 'rr-knowledge', 'aria-label': t('aria.knowledge') },
@@ -2064,11 +2180,26 @@ window.__ModuleLoader__.load({
             : null,
           progress.length
             ? h('div', { className: 'rr-knowledge-progress' },
-              h('div', { className: 'rr-knowledge-progress-label' }, t('knowledge.progress')),
+              h('div', { className: 'rr-knowledge-progress-head' },
+                h('span', { className: 'rr-knowledge-progress-label' }, t('knowledge.progress')),
+                h('button', {
+                  type: 'button',
+                  className: 'rr-log-close',
+                  onClick: function () { if (props.onToggleLogs) props.onToggleLogs(false); },
+                  'aria-label': t('knowledge.hideLogs'),
+                  title: t('knowledge.hideLogs'),
+                }, '×')
+              ),
               progress.map(function (line, index) {
                 return h('div', { key: index, className: 'rr-knowledge-progress-line' }, line);
               }))
-            : null
+            : (allProgress.length
+              ? h('button', {
+                type: 'button',
+                className: 'rr-log-toggle',
+                onClick: function () { if (props.onToggleLogs) props.onToggleLogs(true); },
+              }, t('knowledge.showLogs'))
+              : null)
         ),
         h('div', { className: 'rr-knowledge-actions' },
           h('button', {
@@ -2263,6 +2394,226 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function ModelSettings(props) {
+      const t = props.t;
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState('');
+      const [harness, setHarness] = React.useState(null);
+      const [config, setConfig] = React.useState(null);
+      const [provider, setProvider] = React.useState('deepseek');
+      const [model, setModel] = React.useState('');
+      const [baseUrl, setBaseUrl] = React.useState('');
+      const [endpointId, setEndpointId] = React.useState('');
+      const [credentialEnv, setCredentialEnv] = React.useState('DEEPSEEK_API_KEY');
+      const [saving, setSaving] = React.useState(false);
+      const [message, setMessage] = React.useState('');
+
+      React.useEffect(function () {
+        let active = true;
+        const controller = new AbortController();
+        (async function () {
+          setLoading(true);
+          setError('');
+          try {
+            const results = await Promise.all([
+              fetchJSON(API_BASE + '/harness-models', controller.signal).catch(function () { return null; }),
+              fetchJSON(API_BASE + '/model-config?project=' + encodeURIComponent(String(props.projectId || '')), controller.signal),
+            ]);
+            if (!active) return;
+            const harnessValue = isObject(results[0]) ? results[0] : null;
+            const configValue = isObject(results[1]) ? results[1] : null;
+            setHarness(harnessValue);
+            setConfig(configValue);
+            if (configValue && isObject(configValue.model_backend)) {
+              const backend = configValue.model_backend;
+              setProvider(asText(backend.provider, 'deepseek'));
+              setModel(asText(backend.model, ''));
+              setBaseUrl(asText(backend.base_url, ''));
+              setEndpointId(asText(backend.endpoint_id, ''));
+              setCredentialEnv(asText(backend.credential_env, 'DEEPSEEK_API_KEY'));
+            }
+          } catch (loadError) {
+            if (!active || controller.signal.aborted) return;
+            setError(errorText(loadError));
+          } finally {
+            if (active) setLoading(false);
+          }
+        })();
+        return function () {
+          active = false;
+          controller.abort();
+        };
+      }, [props.projectId]);
+
+      const providers = harness && Array.isArray(harness.providers) ? harness.providers.filter(isObject) : [];
+      const currentProvider = providers.filter(function (item) { return item.id === provider; })[0] || null;
+      const models = currentProvider && Array.isArray(currentProvider.models) ? currentProvider.models : [];
+      const destination = config && isObject(config.destination) ? config.destination : {};
+      const checks = config && isObject(config.checks) ? config.checks : {};
+      const errors = config && isObject(config.errors) ? config.errors : {};
+      const ready = Boolean(config && config.ready === true);
+      const credential = isObject(destination.credential) ? destination.credential : {};
+
+      function chooseProvider(nextProvider) {
+        setProvider(nextProvider);
+        setMessage('');
+        const found = providers.filter(function (item) { return item.id === nextProvider; })[0];
+        if (!found) return;
+        if (!baseUrl && found.base_url) setBaseUrl(asText(found.base_url, ''));
+        if (found.credential_env) setCredentialEnv(asText(found.credential_env, ''));
+        const firstModel = Array.isArray(found.models) && found.models.length ? found.models[0].id : '';
+        if (firstModel && !models.some(function (item) { return item.id === model; })) setModel(firstModel);
+      }
+
+      function chooseModel(nextModel) {
+        setModel(nextModel);
+        setMessage('');
+      }
+
+      async function save() {
+        if (!model.trim()) {
+          setMessage(t('settings.notReady'));
+          return;
+        }
+        setSaving(true);
+        setMessage('');
+        try {
+          const data = await postJSON(API_BASE + '/model-config', {
+            project: props.projectId,
+            provider: provider,
+            model: model.trim(),
+            base_url: baseUrl.trim() || undefined,
+            endpoint_id: endpointId.trim() || undefined,
+            protocol: 'chat_completions',
+            credential_env: credentialEnv.trim() || undefined,
+          });
+          if (isObject(data) && data.ok === false) throw new Error(asText(data.error, ''));
+          if (isObject(data)) setConfig(data);
+          setMessage(t('settings.saved'));
+        } catch (saveError) {
+          setMessage(errorText(saveError));
+        } finally {
+          setSaving(false);
+        }
+      }
+
+      return h('div', { className: 'rr-settings' },
+        h('div', { className: 'rr-settings-head' },
+          h('div', null,
+            h('h2', { className: 'rr-settings-title' }, t('settings.title')),
+            h('div', { className: 'rr-settings-sub' }, t('settings.sub'))
+          ),
+          h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: props.onBack }, t('settings.back'))
+        ),
+        loading
+          ? h('div', { className: 'rr-state-card' }, h(EmptyState, {
+            icon: NavIcon({ size: 22 }), title: t('settings.loading'), hint: '',
+          }))
+          : error
+            ? h('div', { className: 'rr-state-card' }, h(EmptyState, {
+              icon: AlertIcon({ size: 22 }), title: t('projects.errorTitle'), hint: error,
+            }))
+            : h('div', { className: 'rr-settings-card' },
+              harness && harness.available === false
+                ? h('div', { className: 'rr-form-error' },
+                  fill(t('settings.harnessUnavailable'), { reason: asText(harness.reason, t('health.unknown')) }))
+                : null,
+              h('label', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.harnessProvider')),
+                providers.length
+                  ? h('select', {
+                    className: 'rr-select',
+                    value: provider,
+                    onChange: function (event) { chooseProvider(event && event.target ? event.target.value : ''); },
+                  }, providers.map(function (item) {
+                    return h('option', { key: item.id, value: item.id }, item.name + '（' + item.id + '）');
+                  }))
+                  : h('input', {
+                    className: 'rr-input', value: provider,
+                    onChange: function (event) { setProvider(event && event.target ? event.target.value : ''); },
+                  })
+              ),
+              h('label', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.harnessModel')),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+                  models.length
+                    ? h('select', {
+                      className: 'rr-select',
+                      value: models.some(function (item) { return item.id === model; }) ? model : '',
+                      onChange: function (event) { chooseModel(event && event.target ? event.target.value : ''); },
+                    },
+                      h('option', { value: '' }, t('settings.modelOverride')),
+                      models.map(function (item) {
+                        return h('option', { key: item.id, value: item.id }, item.name + '（' + item.id + '）');
+                      }))
+                    : null,
+                  h('input', {
+                    className: 'rr-input',
+                    value: model,
+                    placeholder: 'deepseek-chat',
+                    onChange: function (event) { chooseModel(event && event.target ? event.target.value : ''); },
+                  })
+                )
+              ),
+              h('label', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.baseUrl')),
+                h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } },
+                  h('input', {
+                    className: 'rr-input', value: baseUrl, placeholder: 'https://api.deepseek.com/v1',
+                    onChange: function (event) { setBaseUrl(event && event.target ? event.target.value : ''); },
+                  }),
+                  h('span', { className: 'rr-field-hint' },
+                    t('settings.baseUrlHint')
+                    + (currentProvider && currentProvider.open_ai_compatible === false
+                      ? ' · ' + t('settings.incompatibleHint') : ''))
+                )
+              ),
+              h('label', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.endpointId')),
+                h('input', {
+                  className: 'rr-input', value: endpointId, placeholder: 'deepseek',
+                  onChange: function (event) { setEndpointId(event && event.target ? event.target.value : ''); },
+                })
+              ),
+              h('label', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.credentialEnv')),
+                h('input', {
+                  className: 'rr-input', value: credentialEnv, placeholder: 'DEEPSEEK_API_KEY',
+                  onChange: function (event) { setCredentialEnv(event && event.target ? event.target.value : ''); },
+                })
+              ),
+              h('div', { className: 'rr-settings-row' },
+                h('span', { className: 'rr-settings-label' }, t('settings.protocol')),
+                h('span', { className: 'rr-muted', style: { fontSize: '11.5px' } }, 'chat_completions')
+              ),
+              h('div', { className: 'rr-settings-status' },
+                h('span', null,
+                  h('span', { className: 'rr-badge ' + (ready ? 'is-ok' : 'is-warn') },
+                    ready ? t('settings.ready') : t('settings.notReady'))),
+                h('span', null, t('settings.credential') + '：' + (credential.present ? t('settings.present') : t('settings.missing'))
+                  + (credential.env ? '（' + asText(credential.env, '') + '）' : '')),
+                Object.keys(checks).length
+                  ? h('span', null, Object.keys(checks).map(function (key) {
+                    return h('span', { key: key, style: { marginRight: '10px' } },
+                      key + ' ' + (checks[key] ? '✓' : '✗'));
+                  }))
+                  : null,
+                Object.keys(errors).length
+                  ? h('span', null, Object.keys(errors).map(function (key) {
+                    return h('div', { key: key, className: 'rr-form-error' }, key + '：' + asText(errors[key], ''));
+                  }))
+                  : null
+              ),
+              h('div', { className: 'rr-settings-foot' },
+                message ? h('span', { className: 'rr-muted', style: { marginRight: 'auto' } }, message) : null,
+                h('button', {
+                  type: 'button', className: 'rr-btn rr-btn-primary', onClick: save, disabled: saving,
+                }, saving ? t('settings.saving') : t('settings.save'))
+              )
+            )
+      );
+    }
+
     function DetailView(props) {
       const t = props.t;
       const detail = isObject(props.detail) ? props.detail : {};
@@ -2439,6 +2790,8 @@ window.__ModuleLoader__.load({
       const [knowledgeTick, setKnowledgeTick] = React.useState(0);
       const [knowledgeNotice, setKnowledgeNotice] = React.useState('');
       const [syncJob, setSyncJob] = React.useState(null);
+      const [logsOpen, setLogsOpen] = React.useState(true);
+      const [settingsOpen, setSettingsOpen] = React.useState(false);
       // ---- PR 列表与详情状态 ----
       const [listData, setListData] = React.useState(null);
       const [listLoading, setListLoading] = React.useState(true);
@@ -2679,8 +3032,10 @@ window.__ModuleLoader__.load({
                 setKnowledgeNotice(fill(t('knowledge.synced'), { sha: shortSha(result.commit) || shortSha(result.snapshot_id) }));
                 setKnowledgeTick(function (value) { return value + 1; });
                 setProjectsReload(function (value) { return value + 1; });
+                setLogsOpen(false);
               } else if (data.status === 'error') {
                 setKnowledgeNotice(fill(t('knowledge.failed'), { message: asText(data.error, t('health.unknown')) }));
+                setLogsOpen(false);
               }
             } catch (error) {
               if (active) setKnowledgeNotice(fill(t('knowledge.failed'), { message: errorText(error) }));
@@ -2750,6 +3105,7 @@ window.__ModuleLoader__.load({
             error: null,
             mode: mode,
           });
+          setLogsOpen(true);
         } catch (error) {
           setKnowledgeNotice(fill(t('knowledge.failed'), { message: errorText(error) }));
         }
@@ -2927,6 +3283,12 @@ window.__ModuleLoader__.load({
             : null,
           h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: function () { setView('landing'); } },
             t('action.backToProjects')),
+          h('button', {
+            type: 'button',
+            className: 'rr-btn rr-btn-sm',
+            onClick: function () { setSettingsOpen(function (value) { return !value; }); },
+            'aria-pressed': settingsOpen ? 'true' : 'false',
+          }, t('action.model')),
           h('button', { type: 'button', className: 'rr-btn rr-btn-sm', onClick: checkKnowledge, disabled: knowledgeLoading },
             t('action.check')),
           h('button', {
@@ -2955,27 +3317,35 @@ window.__ModuleLoader__.load({
         )
         : null;
 
-      const body = view === 'landing'
-        ? h(ProjectsView, {
-          projects: projects,
-          loading: projectsLoading,
-          error: projectsError,
-          activeId: projectId,
+      const body = settingsOpen && view === 'workspace'
+        ? h(ModelSettings, {
+          projectId: projectId,
           t: t,
-          onOpen: openProject,
-          onImport: openImport,
-          onRetry: function () { setProjectsReload(function (value) { return value + 1; }); },
+          onBack: function () { setSettingsOpen(false); },
         })
-        : h('div', { className: 'rr-workspace' },
-          h(KnowledgeCard, {
-            knowledge: knowledge,
-            job: syncJob,
-            loading: knowledgeLoading,
-            notice: knowledgeNotice || (knowledgeError ? fill(t('knowledge.failed'), { message: knowledgeError }) : ''),
+        : view === 'landing'
+          ? h(ProjectsView, {
+            projects: projects,
+            loading: projectsLoading,
+            error: projectsError,
+            activeId: projectId,
             t: t,
-            onCheck: checkKnowledge,
-            onSync: startSync,
-          }),
+            onOpen: openProject,
+            onImport: openImport,
+            onRetry: function () { setProjectsReload(function (value) { return value + 1; }); },
+          })
+          : h('div', { className: 'rr-workspace' },
+            h(KnowledgeCard, {
+              knowledge: knowledge,
+              job: syncJob,
+              loading: knowledgeLoading,
+              logsOpen: logsOpen,
+              notice: knowledgeNotice || (knowledgeError ? fill(t('knowledge.failed'), { message: knowledgeError }) : ''),
+              t: t,
+              onCheck: checkKnowledge,
+              onSync: startSync,
+              onToggleLogs: setLogsOpen,
+            }),
           importNotice ? h('div', { className: 'rr-notice' }, importNotice) : null,
           h('div', { className: 'rr-body', 'data-pane': listPane },
             h('aside', { className: 'rr-listpane', 'aria-label': t('aria.prList') },

@@ -4,7 +4,9 @@
 
 - **项目总览**：列出已加载项目；支持导入未加载项目（HTTPS 仓库地址 + 可选本地 clone + 分支多选）。
 - **工作区**：切换分支；知识库卡片显示 未构建 / 有更新 / 已最新（远端 tip vs 快照提交、落后提交数），
-  可「检查更新」「更新结构索引」「语义同步」，同步过程展示流式进度。
+  可「检查更新」「更新结构索引」「语义同步」，同步过程展示流式进度（完成后日志窗自动收起，也可手动「×」关闭，
+  需要时点「查看同步日志」重新展开）。
+- **模型配置**：从 DeepSeek Harness 已配置的模型中选择控制器路由，保存后即时显示就绪检查。
 - **PR 检视**：当前项目的 GitCode PR 列表；选中后显示 AI 审查意见（严重度、触发条件、系统影响、
   证据 `path:line`、验证方法、覆盖缺口）与"审查是否基于最新提交"。
 
@@ -74,10 +76,23 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | GET | `/recsdk-review/api/pulls?project=` | PR 列表（`offline=1` / `refresh=1`） |
 | GET | `/recsdk-review/api/pulls/<number>?project=` | PR 详情与审查结果 |
 | GET | `/recsdk-review/api/health` | 控制器健康状态 |
+| GET | `/recsdk-review/api/harness-models` | DeepSeek Harness 已配置的提供方/模型（含 base_url、凭据环境变量提示） |
+| GET | `/recsdk-review/api/model-config?project=` | 控制器当前模型路由与就绪检查 |
+| POST | `/recsdk-review/api/model-config` | 保存模型路由 `{project,provider,model,base_url,endpoint_id,credential_env}`（不保存凭据） |
+
+## 模型配置页
+
+工作区头部「模型配置」打开控制器模型路由页：
+
+- 提供方与模型下拉来自 **DeepSeek Harness 已配置的 llm 路由**（`llm.listProviders()` / `llm.listModels()`），
+  并结合宿主设置推导 `base_url` 与凭据环境变量（例如 `gateway` 提供方会带出 OpenAI 兼容地址与 `GATEWAY_API_KEY`）。
+- 页面只写路由参数到项目配置（`model_backend`），**不写入也不返回凭据值**；凭据仍由进程/用户环境变量或凭证文件提供。
+- 保存后立即显示控制器就绪检查（provider/protocol/endpoint/model/credential），缺失项与原因原样呈现。
+- 未暴露 OpenAI 兼容地址的提供方（如官方 DeepSeek 平台路由）会提示手动填写 base_url。
 
 ## Agent 工具
 
-`recsdk_projects`、`recsdk_knowledge_status`、`recsdk_pr_list`、`recsdk_pr_review`、`recsdk_review_health`。
+`recsdk_projects`、`recsdk_knowledge_status`、`recsdk_harness_models`、`recsdk_pr_list`、`recsdk_pr_review`、`recsdk_review_health`。
 
 ## 卸载
 

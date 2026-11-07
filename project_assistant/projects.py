@@ -461,6 +461,75 @@ def knowledge_status(project_id, ref, refresh=False):
             "semantic_reason": reason}
 
 
+# --------------------------------------------------------------------------- 模型配置
+
+
+def model_show(project_id):
+    """读取项目当前的模型路由配置与就绪状态（不返回任何凭据值）。"""
+    _entry, config = load_project_config(project_id)
+    from .backends import backend_checks, model_destination
+    checks = backend_checks(config, network=False)
+    destination = model_destination(config)
+    return {"project_id": project_id,
+            "config_path": str(config.path),
+            "model_backend": config.get("model_backend") or {},
+            "destination": destination,
+            "ready": all(checks["checks"].get(name) is True for name in SEMANTIC_CHECKS),
+            "checks": checks["checks"],
+            "errors": checks["errors"],
+            "secrets_policy": "凭据只从进程/用户环境变量或凭证文件读取；本接口不写入也不返回凭据值。"}
+
+
+def model_set(project_id, *, provider, model, base_url=None, endpoint_id=None,
+              protocol=None, credential_env=None, credential_file=None):
+    """写入项目的模型路由配置；只保存路由与非敏感参数，绝不保存凭据。"""
+    _entry, config = load_project_config(project_id)
+    provider = (provider or "").strip().lower()
+    if provider not in {"deepseek", "codex"}:
+        raise ValueError("provider 只能是 deepseek 或 codex")
+    model = (model or "").strip()
+    if not model:
+        raise ValueError("model 不能为空")
+    base_url = (base_url or "").strip()
+    if provider == "deepseek":
+        if not base_url:
+            raise ValueError("deepseek 路由需要 base_url")
+        if not base_url.lower().startswith("https://"):
+            raise ValueError("base_url 必须是 https 地址")
+    value = read_json(config.path, {}) or {}
+    previous = value.get("model_backend") if isinstance(value.get("model_backend"), dict) else {}
+    backend = dict(previous)
+    backend.update(provider=provider, model=model)
+    if base_url:
+        backend["base_url"] = base_url
+    elif provider == "deepseek":
+        backend.setdefault("base_url", "")
+    backend["protocol"] = (protocol or backend.get("protocol") or "chat_completions").strip()
+    if endpoint_id:
+        backend["endpoint_id"] = endpoint_id.strip()
+    elif not backend.get("endpoint_id") or backend.get("endpoint_id") == "pending-deployment":
+        from urllib.parse import urlsplit
+        backend["endpoint_id"] = urlsplit(base_url).hostname or ""
+    if credential_env:
+        backend["credential_env"] = credential_env.strip()
+    if credential_file:
+        backend["credential_file"] = credential_file.strip()
+    backend.setdefault("max_retries", 2)
+    backend.setdefault("timeout", 1800)
+    backend.setdefault("max_schema_repairs", 1)
+    if not isinstance(backend.get("task_profiles"), dict):
+        backend["task_profiles"] = {
+            "knowledge": {"reasoning_effort": "medium", "max_tokens": 8192},
+            "review": {"reasoning_effort": "xhigh", "max_tokens": 16384},
+            "feature_design": {"reasoning_effort": "high", "max_tokens": 12288},
+            "feature_delivery": {"reasoning_effort": "high", "max_tokens": 12288},
+            "generic": {"reasoning_effort": "medium", "max_tokens": 8192},
+        }
+    value["model_backend"] = backend
+    atomic_json(config.path, value)
+    return model_show(project_id)
+
+
 def derive_domains(config, ref):
     """首次构建知识库时按顶层目录派生出领域配置并写回项目配置。"""
     from .git import Git

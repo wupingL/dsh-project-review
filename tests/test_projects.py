@@ -171,6 +171,44 @@ class ProjectRegistryTests(unittest.TestCase):
                 with self.assertRaises((ValueError, RuntimeError)):
                     projects.import_project("unsafe", "https://gitcode.com/demo/unsafe", str(repo), [unsafe])
 
+    def test_model_show_and_set_never_store_credentials(self):
+        repo = self.root / "model-project"
+        make_repo(repo)
+        with self.patch_paths():
+            imported = projects.import_project("modelp", "https://gitcode.com/demo/modelp", str(repo), ["main"])
+            project_id = imported["project"]["id"]
+            shown = projects.model_show(project_id)
+            self.assertIn("checks", shown)
+            self.assertFalse(shown["ready"])
+            self.assertIn("secrets_policy", shown)
+
+            saved = projects.model_set(project_id, provider="deepseek", model="deepseek-chat",
+                                       base_url="https://api.deepseek.com/v1",
+                                       credential_env="MY_LLM_KEY")
+            backend = saved["model_backend"]
+            self.assertEqual(backend["provider"], "deepseek")
+            self.assertEqual(backend["model"], "deepseek-chat")
+            self.assertEqual(backend["base_url"], "https://api.deepseek.com/v1")
+            self.assertEqual(backend["credential_env"], "MY_LLM_KEY")
+            self.assertIn("endpoint_id", backend)
+            self.assertIn("task_profiles", backend)
+            stored = json.dumps(read_json(self.config_dir / (project_id + ".json")), ensure_ascii=False)
+            self.assertNotIn("api_key", stored.lower())
+            self.assertNotIn("secret", stored.lower())
+
+    def test_model_set_validates_url_and_model(self):
+        repo = self.root / "model-invalid"
+        make_repo(repo)
+        with self.patch_paths():
+            imported = projects.import_project("modeli", "https://gitcode.com/demo/modeli", str(repo), ["main"])
+            project_id = imported["project"]["id"]
+            with self.assertRaises(ValueError):
+                projects.model_set(project_id, provider="deepseek", model="x", base_url="http://insecure")
+            with self.assertRaises(ValueError):
+                projects.model_set(project_id, provider="deepseek", model="")
+            with self.assertRaises(ValueError):
+                projects.model_set(project_id, provider="openai", model="x", base_url="https://api.example.com")
+
 
 if __name__ == "__main__":
     unittest.main()

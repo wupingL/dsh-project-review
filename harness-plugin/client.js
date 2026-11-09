@@ -238,6 +238,7 @@ window.__ModuleLoader__.load({
       'settings.savedRoute': '已保存路由',
       'settings.needModel': '请填写或选择模型',
       'settings.needBaseUrl': '请填写接口地址（https）',
+      'settings.needKeyForManual': '手动配置外部网关时需要填写该网关的 API Key；只想用 Harness 模型请点上方「使用 Harness 当前模型」',
     };
 
     const EN = {
@@ -463,6 +464,7 @@ window.__ModuleLoader__.load({
       'settings.savedRoute': 'Saved route',
       'settings.needModel': 'Choose or enter a model',
       'settings.needBaseUrl': 'Enter a base URL (https)',
+      'settings.needKeyForManual': 'A manual external gateway needs its own API key; to use the Harness model instead, click “Use the Harness model” above',
     };
 
     const CSS = `
@@ -2544,6 +2546,13 @@ window.__ModuleLoader__.load({
         if (!provider || !model) {
           setResult(function (previous) {
             return { ...(isObject(previous) ? previous : {}), error: t('settings.needModel') };
+          });
+          return;
+        }
+        if (!apiKey.trim()) {
+          // 手动路径指向外部网关：必须提供该网关的 Key，否则会沿用桥令牌而收到 401。
+          setResult(function (previous) {
+            return { ...(isObject(previous) ? previous : {}), error: t('settings.needKeyForManual') };
           });
           return;
         }

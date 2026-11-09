@@ -850,10 +850,11 @@ function createService(options, hostBridge, modelBridge) {
   }
 
   /** 把控制器路由切到本插件的宿主模型桥：无需 API Key，直接使用 Harness 当前启用的模型。 */
-  async function useHarness(projectId, bridge) {
+  async function useHarness(projectId) {
     const id = String(projectId || '');
     if (!id) throw new Error('缺少项目 id');
-    if (!bridge) throw new Error('宿主模型桥不可用');
+    if (!modelBridge) throw new Error('宿主模型桥不可用');
+    const bridge = modelBridge;
     let selection = hostBridge.currentSelection();
     if (!selection) {
       const catalog = await hostBridge.harnessModels();
@@ -1047,7 +1048,7 @@ function createRouteHandler(options, service) {
       if (pathname === `${ROUTE_PREFIX}/model-config/use-harness` && method === 'POST') {
         try {
           const payload = await readJsonBody(req);
-          json(res, 200, await service.useHarness(payload.project, modelBridge));
+          json(res, 200, await service.useHarness(payload.project));
         } catch (error) {
           json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
         }
@@ -1336,7 +1337,7 @@ export function apply(ctx, config) {
             projectId = listed && listed.default_project;
           }
           if (!projectId) throw new Error('没有已加载的项目');
-          const data = await service.useHarness(projectId, modelBridge);
+          const data = await service.useHarness(projectId);
           if (data && data.ok === false) throw new Error(data.error || '切换失败');
           return data;
         },

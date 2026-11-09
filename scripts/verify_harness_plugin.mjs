@@ -419,7 +419,9 @@ async function main() {
     const useHarness = await callRoute(routes, '/recsdk-review/api/model-config/use-harness', 'POST',
       { project: 'recsdk' });
     check('use-harness 无宿主模型时返回可读错误', Boolean(useHarness.body && useHarness.body.ok === false
-      && typeof useHarness.body.error === 'string'));
+      && typeof useHarness.body.error === 'string'
+      && !/is not defined/.test(useHarness.body.error)),
+      useHarness.body && useHarness.body.error);
 
     const list = await callRoute(routes, '/recsdk-review/api/pulls?project=recsdk');
     check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 1);

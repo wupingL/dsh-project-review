@@ -1,0 +1,56 @@
+{
+  "name": "hello-flask-10-01",
+  "repo_url": "https://gitcode.com/qq_15002125/hello-flask-10-01",
+  "api_url": "https://api.gitcode.com/api/v5",
+  "branches": [
+    "main"
+  ],
+  "state_dir": "../data",
+  "max_file_bytes": 2000000,
+  "max_diff_chars": 160000,
+  "exclude": [
+    ".ua/**",
+    ".understand-anything/**",
+    "**/3rdparty/**",
+    "**/third_party/**",
+    "**/node_modules/**",
+    "**/__pycache__/**"
+  ],
+  "domains": {},
+  "review_rules": [],
+  "model_backend": {
+    "provider": "deepseek",
+    "protocol": "chat_completions",
+    "endpoint_id": "127.0.0.1",
+    "base_url": "http://127.0.0.1:55114/v1",
+    "model": "gateway::deepseek-v4.1-flash",
+    "credential_env": "HARNESS_BRIDGE",
+    "max_retries": 2,
+    "timeout": 1800,
+    "max_schema_repairs": 1,
+    "task_profiles": {
+      "knowledge": {
+        "reasoning_effort": "medium",
+        "max_tokens": 8192
+      },
+      "review": {
+        "reasoning_effort": "xhigh",
+        "max_tokens": 16384
+      },
+      "feature_design": {
+        "reasoning_effort": "high",
+        "max_tokens": 12288
+      },
+      "feature_delivery": {
+        "reasoning_effort": "high",
+        "max_tokens": 12288
+      },
+      "generic": {
+        "reasoning_effort": "medium",
+        "max_tokens": 8192
+      }
+    },
+    "credential_file": "D:\\GRVLLM\\ReviewWork\\project-assistant\\data\\repositories\\3bfe52954ba7909c90c4\\credentials.json",
+    "credential_key": "HARNESS_BRIDGE"
+  }
+}

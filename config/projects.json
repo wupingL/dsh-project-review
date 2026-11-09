@@ -6,6 +6,11 @@
       "id": "recsdk",
       "name": "RecSDK_for_lingqu",
       "config": "recsdk.json"
+    },
+    {
+      "id": "hello-flask-10-01-3bfe5295",
+      "name": "hello-flask-10-01",
+      "config": "hello-flask-10-01-3bfe5295.json"
     }
   ]
 }

@@ -99,6 +99,10 @@ elif args[:1] == ['knowledge'] and 'sync' in args:
           "manifest_path": "state/snapshots/s2/manifest.json", "duration_seconds": 0.1,
           "published": True})
 elif args[:1] == ['model'] and 'apply' in args:
+    provider = args[args.index('--provider') + 1] if '--provider' in args else ''
+    if provider not in ('deepseek', 'codex'):
+        print(json.dumps({"error": "argument --provider: invalid choice: '%s'" % provider}), file=sys.stderr)
+        sys.exit(2)
     model = args[args.index('--model') + 1]
     base = args[args.index('--base-url') + 1] if '--base-url' in args else ''
     line = sys.stdin.readline().strip() if '--key-stdin' in args else ''
@@ -307,7 +311,7 @@ async function main() {
     check('index.js 声明 tools 注入', Array.isArray(module.inject) && module.inject.includes('tools'));
 
     const { ctx, tools, routes } = makeFakeCtx();
-    module.apply(ctx, { projectRoot: root, python, cliTimeoutMs: 30000, syncTimeoutMs: 60000 });
+    module.apply(ctx, { projectRoot: root, python, cliTimeoutMs: 30000, syncTimeoutMs: 60000, bridgePort: 55999 });
 
     check('注册 7 个 Agent 工具', tools.size === 7, [...tools.keys()].join(','));
     check('注册前缀路由', routes.length === 1 && routes[0].kind === 'prefix');
@@ -389,6 +393,14 @@ async function main() {
     check('apply 返回连通性测试结果', Boolean(applied.body && applied.body.test && applied.body.test.ok === true));
     check('apply 响应不回显密钥', !JSON.stringify(applied.body).includes(secret));
 
+    // Harness 提供方 id（gateway）必须映射成控制器后端 deepseek，不能原样传给 CLI
+    const appliedHarnessProvider = await callRoute(routes, '/recsdk-review/api/model-config/apply', 'POST',
+      { project: 'recsdk', provider: 'gateway', model: 'deepseek-v4.1-flash',
+        base_url: 'https://gw.example/v1', credential_env: 'GATEWAY_API_KEY', api_key: secret });
+    check('apply 接受 Harness 提供方 id（自动映射为 deepseek）', Boolean(appliedHarnessProvider.body
+      && appliedHarnessProvider.body.ready === true),
+      JSON.stringify(appliedHarnessProvider.body && appliedHarnessProvider.body.error));
+
     const tested = await callRoute(routes, '/recsdk-review/api/model-config/test', 'POST',
       { project: 'recsdk' });
     check('POST /model-config/test 返回连通性', Boolean(tested.body && tested.body.ok === true
@@ -465,6 +477,8 @@ async function main() {
     console.log('failures: ' + failures.join(' | '));
     process.exit(1);
   }
+  // 插件在加载时会启动宿主模型桥的监听，显式退出避免事件循环挂住。
+  process.exit(0);
 }
 
 main().catch((error) => {

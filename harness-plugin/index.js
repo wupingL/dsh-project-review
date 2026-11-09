@@ -11,7 +11,7 @@
  * 本插件只做读取、缓存与转发。
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -383,7 +383,7 @@ function createModelBridge(hostBridge, options) {
   let token = null;
   try {
     if (existsSync(tokenFile)) {
-      const stored = require('node:fs').readFileSync(tokenFile, 'utf8').trim();
+      const stored = readFileSync(tokenFile, 'utf8').trim();
       if (stored) token = stored;
     }
   } catch {
@@ -392,7 +392,7 @@ function createModelBridge(hostBridge, options) {
   if (!token) {
     token = randomBytes(24).toString('hex');
     try {
-      require('node:fs').writeFileSync(tokenFile, token + '\n', { mode: 0o600 });
+      writeFileSync(tokenFile, token + '\n', { mode: 0o600 });
     } catch {
       /* 无法持久化时仅本次进程有效 */
     }
@@ -761,7 +761,8 @@ function createService(options, hostBridge, modelBridge) {
     if (!projectId) throw new Error('缺少项目 id');
     if (!body.provider) throw new Error('缺少 provider');
     if (!body.model) throw new Error('缺少 model');
-    const args = ['model', 'set', '--id', projectId, '--provider', String(body.provider),
+    const controllerProvider = String(body.provider) === 'codex' ? 'codex' : 'deepseek';
+    const args = ['model', 'set', '--id', projectId, '--provider', controllerProvider,
       '--model', String(body.model)];
     if (body.base_url) args.push('--base-url', String(body.base_url));
     if (body.endpoint_id) args.push('--endpoint-id', String(body.endpoint_id));
@@ -814,8 +815,12 @@ function createService(options, hostBridge, modelBridge) {
         /* 目录不可用时仍按用户输入/已有配置继续 */
       }
     }
+    const requestedProvider = String(body.provider || '');
+    // 控制器只有 deepseek（OpenAI 兼容）与 codex 两种后端；Harness 的提供方 id
+    // （gateway / our-free-model / deepseek-official …）必须先映射成控制器后端。
+    const controllerProvider = requestedProvider === 'codex' ? 'codex' : 'deepseek';
     const args = ['model', 'apply', '--id', projectId,
-      '--provider', String(body.provider), '--model', String(body.model)];
+      '--provider', controllerProvider, '--model', String(body.model)];
     if (baseUrl) args.push('--base-url', baseUrl);
     if (credentialEnv) args.push('--credential-env', credentialEnv);
     if (body.endpoint_id) args.push('--endpoint-id', String(body.endpoint_id));
@@ -823,6 +828,9 @@ function createService(options, hostBridge, modelBridge) {
     if (typeof body.api_key === 'string' && body.api_key.trim()) {
       args.push('--key-stdin');
       input = body.api_key.trim() + '\n';
+    }
+    if (!baseUrl) {
+      throw new Error('该提供方没有可直接使用的 OpenAI 兼容地址；请点「使用 Harness 当前模型」，或换一个带地址的提供方');
     }
     const data = await runJson(args, Math.max(options.cliTimeoutMs, 120000), input);
     memo.clear();
@@ -1350,9 +1358,17 @@ export function apply(ctx, config) {
     };
   }, 'recsdk-review: tools');
 
-  // 宿主模型桥的本地监听随插件卸载回收。
-  ctx.effect(() => () => {
-    modelBridge.dispose();
+  // 宿主模型桥的本地监听随插件卸载回收；启动时立即监听，
+  // 这样已保存的控制器路由（base_url）在 Harness 重启后依然可用。
+  ctx.effect(() => {
+    modelBridge.ensure().catch((error) => {
+      try {
+        ctx.logger?.('warn', `recsdk-review: 宿主模型桥启动失败：${error && error.message ? error.message : error}`);
+      } catch {
+        /* ignore */
+      }
+    });
+    return () => modelBridge.dispose();
   }, 'recsdk-review: model bridge');
 
   // 同源 HTTP 路由：只在 Web 组合里注册。

@@ -222,6 +222,7 @@ window.__ModuleLoader__.load({
       'settings.testSkipped': '未测试',
       'settings.keyAlready': '已保存（留空则不修改）',
       'settings.currentModel': 'Harness 当前启用的模型',
+      'settings.errorTitle': '模型配置加载失败',
       'settings.useHarness': '使用 Harness 当前模型（免配置）',
       'settings.useHarnessHint': '直接把控制器路由指向本插件内置的宿主模型桥，复用 Harness 的模型与凭据，无需填写任何 API Key。',
       'settings.orManual': '或手动指定提供方',
@@ -446,6 +447,7 @@ window.__ModuleLoader__.load({
       'settings.testSkipped': 'Not tested',
       'settings.keyAlready': 'Saved (empty keeps it)',
       'settings.currentModel': 'Model currently enabled in Harness',
+      'settings.errorTitle': 'Could not load the model settings',
       'settings.useHarness': 'Use the Harness model (no setup)',
       'settings.useHarnessHint': 'Points the controller at this plugin\'s host-model bridge, reusing the Harness model and credentials; no API key needed.',
       'settings.orManual': 'Or pick a provider manually',
@@ -2586,7 +2588,7 @@ window.__ModuleLoader__.load({
           }))
           : error
             ? h('div', { className: 'rr-state-card' }, h(EmptyState, {
-              icon: AlertIcon({ size: 22 }), title: t('projects.errorTitle'), hint: error,
+              icon: AlertIcon({ size: 22 }), title: t('settings.errorTitle'), hint: error,
             }))
             : h('div', { className: 'rr-settings-card' },
               h('div', { className: 'rr-settings-row' },

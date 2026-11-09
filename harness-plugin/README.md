@@ -92,8 +92,8 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 复用 Harness 当前启用的模型与凭据。令牌持久化在 `<projectRoot>/.harness-bridge-token`（已加入 .gitignore）。
 
 - 按钮动作：读 `agentDefaultModel.currentSelection()` → 写控制器路由（`provider::model` 标签）→ 写入桥令牌 → 校验就绪 → 跑一次 `/models` 连通性测试。
-- 重启 Harness 后端口与令牌保持不变，已保存的路由继续可用；端口被占用时会退回临时端口（需重新点一次）。
-- 手动路径（可选）：提供方 + 模型 + API Key 直连某个 OpenAI 兼容网关，作为桥不可用时的兜底。
+- 插件加载即开始监听固定端口，因此 Harness 重启后已保存的路由仍然可用；令牌持久化在 `.harness-bridge-token`，端口可用 `bridgePort` 改（默认 55114），被占用时退回临时端口（需重新点一次）。
+- 手动路径（可选）：提供方 + 模型 + API Key 直连某个 OpenAI 兼容网关。Harness 提供方 id 会自动映射为控制器后端（`codex` → codex，其它 → `deepseek`），没有 OpenAI 兼容地址的提供方会给出明确提示。
 
 切换路由后，控制器的语义身份（policy）会变化，旧知识快照会显示为需要更新——这是预期行为。
 

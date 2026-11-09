@@ -57,12 +57,20 @@ elif args[:1] == ['project'] and 'list' in args:
           "projects": [{"id": "recsdk", "name": "RecSDK_for_lingqu",
                         "repo_url": "https://gitcode.com/Ascend/RecSDK_for_lingqu",
                         "config_path": "config/recsdk.json", "state_dir": "state",
-                        "repo_state": "state/repositories/abc", "branches": ["develop"],
+                        "repo_state": "state/repositories/abc",
+                        "mirror_path": "state/repositories/abc/mirror.git",
+                        "snapshots_path": "state/repositories/abc/snapshots",
+                        "worktrees_path": "worktrees/abc",
+                        "reports_path": "state/repositories/abc/reports",
+                        "refs_path": "state/repositories/abc/refs.json",
+                        "local_repo": "D:/clone",
+                        "branches": ["develop"],
                         "has_mirror": True,
                         "snapshots": {"develop": {"semantic": None,
                                                   "structural": {"snapshot_id": "s1", "commit": "abc1234def",
                                                                  "created_at": "2026-11-06T00:00:00+00:00",
                                                                  "mode": "structural", "refreshed_domains": ["a", "b"],
+                                                                 "dir": "state/repositories/abc/snapshots/s1",
                                                                  "status": "complete", "stats": {}}}}}]})
 elif args[:1] == ['project'] and 'probe' in args:
     emit({"ok": True, "repo_url": "https://gitcode.com/o/r", "canonical": "gitcode.com/o/r",
@@ -81,6 +89,13 @@ elif args[:1] == ['project'] and 'branches' in args:
           "error": None})
 elif args[:1] == ['knowledge'] and 'status' in args:
     emit({"project_id": "recsdk", "ref": "develop", "checked_at": "2026-11-07T00:00:00+00:00",
+          "paths": {"config": "config/recsdk.json", "state_dir": "state",
+                    "repo_state": "state/repositories/abc",
+                    "mirror": "state/repositories/abc/mirror.git",
+                    "snapshots": "state/repositories/abc/snapshots",
+                    "snapshot": "state/repositories/abc/snapshots/s1",
+                    "worktrees": "worktrees/abc",
+                    "reports": "state/repositories/abc/reports"},
           "config": {"config_path": "config/recsdk.json", "branches": ["develop"],
                      "domains": ["a", "b"]},
           "remote": {"tip": "abc1234def", "source": "local", "error": None},
@@ -321,6 +336,11 @@ async function main() {
     check('GET /projects 返回预置项目', Boolean(projects.body && projects.body.default_project === 'recsdk'));
     check('GET /projects 含快照指针', Boolean(projects.body
       && projects.body.projects[0].snapshots.develop.structural.snapshot_id === 's1'));
+    check('GET /projects 暴露本地路径', Boolean(projects.body
+      && projects.body.projects[0].mirror_path && projects.body.projects[0].snapshots_path
+      && projects.body.projects[0].worktrees_path));
+    check('快照摘要包含快照目录', Boolean(projects.body
+      && projects.body.projects[0].snapshots.develop.structural.dir));
 
     const probe = await callRoute(routes, '/recsdk-review/api/projects/probe?url=' + encodeURIComponent('https://gitcode.com/o/r'));
     check('GET /projects/probe 返回分支', Boolean(probe.body && probe.body.ok === true
@@ -337,6 +357,8 @@ async function main() {
     const knowledge = await callRoute(routes, '/recsdk-review/api/projects/recsdk/knowledge?ref=develop');
     check('GET /projects/:id/knowledge 200', Boolean(knowledge.body
       && knowledge.body.freshness === 'current' && knowledge.body.semantic_ready === false));
+    check('知识库状态包含本地路径', Boolean(knowledge.body && knowledge.body.paths
+      && knowledge.body.paths.snapshot && knowledge.body.paths.mirror && knowledge.body.paths.python === undefined));
 
     const sync = await callRoute(routes, '/recsdk-review/api/projects/recsdk/knowledge/sync', 'POST',
       { ref: 'develop', mode: 'structural', fetch: true });

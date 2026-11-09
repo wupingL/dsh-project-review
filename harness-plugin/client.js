@@ -145,6 +145,7 @@ window.__ModuleLoader__.load({
       'projects.errorHint': '无法读取项目注册表，请重试。',
       'projects.branchCount': '{n} 个分支',
       'project.active': '当前',
+      'project.copyPath': '点击复制路径',
       'knowledge.title': '知识库',
       'knowledge.status.missing': '未构建',
       'knowledge.status.stale': '有更新',
@@ -164,6 +165,9 @@ window.__ModuleLoader__.load({
       'knowledge.missingHint': '该分支还没有知识库快照，可先构建结构索引。',
       'knowledge.staleHint': '远端有新提交，知识库需要更新。',
       'knowledge.currentHint': '知识库与远端一致。',
+      'knowledge.pathSnapshot': '知识库',
+      'knowledge.pathMirror': '代码镜像',
+      'knowledge.copyPath': '点击复制路径',
       'knowledge.running': '同步中…',
       'knowledge.progress': '同步进度',
       'knowledge.synced': '已同步：{sha}',
@@ -371,6 +375,7 @@ window.__ModuleLoader__.load({
       'projects.errorHint': 'The project registry is unreadable. Retry.',
       'projects.branchCount': '{n} branches',
       'project.active': 'Active',
+      'project.copyPath': 'Click to copy the path',
       'knowledge.title': 'Knowledge',
       'knowledge.status.missing': 'Not built',
       'knowledge.status.stale': 'Out of date',
@@ -390,6 +395,9 @@ window.__ModuleLoader__.load({
       'knowledge.missingHint': 'This branch has no knowledge snapshot yet. Build a structural index first.',
       'knowledge.staleHint': 'The remote has newer commits; the knowledge base needs an update.',
       'knowledge.currentHint': 'The knowledge base matches the remote tip.',
+      'knowledge.pathSnapshot': 'Knowledge',
+      'knowledge.pathMirror': 'Code mirror',
+      'knowledge.copyPath': 'Click to copy the path',
       'knowledge.running': 'Syncing…',
       'knowledge.progress': 'Progress',
       'knowledge.synced': 'Synced: {sha}',
@@ -1080,6 +1088,41 @@ window.__ModuleLoader__.load({
   white-space: nowrap;
   text-decoration: none;
 }
+.rr-page .rr-project-path {
+  display: block;
+  color: var(--dsw-alias-label-caption);
+  font-size: 10.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rr-page .rr-project-path:hover { color: var(--dsw-alias-link); }
+.rr-page .rr-knowledge-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  min-width: 0;
+}
+.rr-page .rr-knowledge-path {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-caption);
+  cursor: pointer;
+}
+.rr-page .rr-knowledge-path:hover code { color: var(--dsw-alias-link); }
+.rr-page .rr-knowledge-path-label { flex: none; }
+.rr-page .rr-knowledge-path code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
 .rr-page a.rr-project-repo:hover { color: var(--dsw-alias-link); }
 .rr-page .rr-project-error { color: var(--rr-critical); font-size: 11.5px; overflow-wrap: anywhere; }
 .rr-page .rr-branch-lines { display: flex; flex-direction: column; gap: 2px; }
@@ -1440,6 +1483,18 @@ window.__ModuleLoader__.load({
       return source.replace(/\{(\w+)\}/g, function (match, key) {
         return values && Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match;
       });
+    }
+
+    /** 点击路径文字即可复制；失败时静默（无剪贴板权限）。 */
+    function copyText(text, t) {
+      if (!text) return;
+      try {
+        if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).catch(function () {});
+        }
+      } catch (ignored) {
+        /* ignore */
+      }
     }
 
     function numberOr(value, fallback) {
@@ -2134,6 +2189,7 @@ window.__ModuleLoader__.load({
         );
       });
       const repoUrl = safeHttpUrl(project.repo_url);
+      const repoStatePath = asText(project.repo_state, '');
       return h('div', {
         className: 'rr-project-card' + (props.active ? ' is-active' : '') + (project.error ? ' has-error' : ''),
         role: 'listitem',
@@ -2146,6 +2202,13 @@ window.__ModuleLoader__.load({
           ? h('a', { className: 'rr-project-repo', href: repoUrl, target: '_blank', rel: 'noreferrer', title: project.repo_url },
             asText(project.repo_url, ''))
           : h('div', { className: 'rr-project-repo' }, asText(project.repo_url, t('common.unknown'))),
+        repoStatePath
+          ? h('div', {
+            className: 'rr-project-path',
+            title: t('project.copyPath') + ': ' + repoStatePath,
+            onClick: function () { copyText(repoStatePath, t); },
+          }, repoStatePath)
+          : null,
         project.error
           ? h('div', { className: 'rr-project-error' }, project.error)
           : h('div', { className: 'rr-branch-lines' }, branchLines),
@@ -2205,6 +2268,11 @@ window.__ModuleLoader__.load({
       const behind = numberOr(knowledge && knowledge.behind, 0);
       const ready = Boolean(knowledge && knowledge.semantic_ready === true);
       const reason = asText(knowledge && knowledge.semantic_reason, '');
+      const paths = isObject(knowledge) && isObject(knowledge.paths) ? knowledge.paths : {};
+      const pathRows = [
+        { label: t('knowledge.pathSnapshot'), value: asText(paths.snapshot || paths.snapshots, '') },
+        { label: t('knowledge.pathMirror'), value: asText(paths.mirror, '') },
+      ].filter(function (row) { return Boolean(row.value); });
       const running = Boolean(props.job && props.job.status === 'running');
       const job = isObject(props.job) ? props.job : null;
       const allProgress = job && Array.isArray(job.progress) ? job.progress : [];
@@ -2234,6 +2302,19 @@ window.__ModuleLoader__.load({
                 : kind === 'stale' ? t('knowledge.staleHint')
                   : t('knowledge.missingHint'))
           ),
+          pathRows.length
+            ? h('div', { className: 'rr-knowledge-paths' },
+              pathRows.map(function (row) {
+                return h('div', {
+                  key: row.label,
+                  className: 'rr-knowledge-path',
+                  title: t('knowledge.copyPath') + ': ' + row.value,
+                  onClick: function () { copyText(row.value, t); },
+                },
+                  h('span', { className: 'rr-knowledge-path-label' }, row.label),
+                  h('code', null, row.value));
+              }))
+            : null,
           !ready && kind !== 'current'
             ? h('div', { className: 'rr-knowledge-note' },
               fill(t('knowledge.semanticDisabled'), { reason: reason || t('health.unknown') }))

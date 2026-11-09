@@ -97,6 +97,32 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 
 切换路由后，控制器的语义身份（policy）会变化，旧知识快照会显示为需要更新——这是预期行为。
 
+## 本地路径（代码镜像 / 知识库）
+
+页面直接显示本地路径，点击路径文字即复制：
+
+- **项目卡片**：显示项目状态根 `<data>/repositories/<repo_key>`（含 `mirror.git`、`snapshots/`、`refs.json`、`reports/`、`state.sqlite`）。
+- **知识库卡片**：显示当前分支的「知识库」快照目录（`snapshots/<snapshot_id>/`）与「代码镜像」（`mirror.git`）。
+
+对应 CLI（输出里含 `paths` 字段）：
+
+```powershell
+python -m project_assistant.cli project list                          # mirror_path / snapshots_path / worktrees_path / refs_path ...
+python -m project_assistant.cli knowledge status --id <项目> --ref <分支>   # paths.snapshot 即当前知识库快照目录
+```
+
+目录约定（默认 `<projectRoot>/data` 为状态根）：
+
+| 内容 | 路径 |
+| --- | --- |
+| 项目配置 | `config/<project>.json` |
+| 仓库镜像（离线 git） | `data/repositories/<key>/mirror.git` |
+| 知识快照 | `data/repositories/<key>/snapshots/<snapshot_id>/`（`manifest.json`、`files.json`、`knowledge.json`、`.ua/`） |
+| 快照指针 | `data/repositories/<key>/refs.json` |
+| 分析 worktree | `worktrees/<key8>/<sha12>/` |
+| 审查报告 | `data/repositories/<key>/reports/<pr>/<fingerprint>/` |
+| 队列与去重 | `data/repositories/<key>/state.sqlite` |
+
 ## 交互约定
 
 - 进入工作区即自动拉取最新 PR 列表（请求带 `refresh=1`），不再提供手动「刷新」按钮。

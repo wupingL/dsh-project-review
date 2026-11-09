@@ -116,14 +116,16 @@ def _repo_state_of(config):
 def _snapshot_summary(config, snapshot_id):
     if not snapshot_id:
         return None
-    manifest = read_json(_repo_state_of(config) / "snapshots" / snapshot_id / "manifest.json")
+    folder = _repo_state_of(config) / "snapshots" / snapshot_id
+    manifest = read_json(folder / "manifest.json")
     if not isinstance(manifest, dict):
-        return {"snapshot_id": snapshot_id, "commit": None, "created_at": None,
+        return {"snapshot_id": snapshot_id, "commit": None, "created_at": None, "dir": str(folder),
                 "mode": None, "refreshed_domains": [], "status": "missing-manifest", "stats": {}}
     stats = manifest.get("stats") if isinstance(manifest.get("stats"), dict) else {}
     return {"snapshot_id": snapshot_id,
             "commit": manifest.get("commit"),
             "created_at": manifest.get("created_at"),
+            "dir": str(folder),
             "mode": manifest.get("mode"),
             "refreshed_domains": manifest.get("refreshed_domains") or [],
             "status": manifest.get("status"),
@@ -160,6 +162,12 @@ def project_view(entry):
             "config_path": str(path),
             "state_dir": str(config.state),
             "repo_state": str(repo_state),
+            "mirror_path": str(repo_state / "mirror.git"),
+            "snapshots_path": str(repo_state / "snapshots"),
+            "worktrees_path": str(config.state.parent / "worktrees" / config.key[:8]),
+            "reports_path": str(repo_state / "reports"),
+            "refs_path": str(repo_state / "refs.json"),
+            "local_repo": config.get("local_repo") or None,
             "branches": list(config.get("branches") or []),
             "has_mirror": (repo_state / "mirror.git").is_dir(),
             "snapshots": snapshots}
@@ -451,9 +459,18 @@ def knowledge_status(project_id, ref, refresh=False):
     if best and best.get("commit") and tip:
         behind = _commit_distance(git, best["commit"], tip)
         ahead = _ahead_distance(git, best["commit"], tip)
+    repo_state = _repo_state_of(config)
     return {"project_id": project_id,
             "ref": ref,
             "checked_at": now(),
+            "paths": {"config": str(config.path),
+                      "state_dir": str(config.state),
+                      "repo_state": str(repo_state),
+                      "mirror": str(repo_state / "mirror.git"),
+                      "snapshots": str(repo_state / "snapshots"),
+                      "snapshot": best.get("dir") if best else None,
+                      "worktrees": str(config.state.parent / "worktrees" / config.key[:8]),
+                      "reports": str(repo_state / "reports")},
             "config": {"config_path": str(config.path),
                        "branches": list(config.get("branches") or []),
                        "domains": list(config.get("domains") or {})},

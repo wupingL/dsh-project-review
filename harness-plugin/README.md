@@ -9,6 +9,10 @@
 - **模型配置**：从 DeepSeek Harness 已配置的模型中选择控制器路由，保存后即时显示就绪检查。
 - **PR 检视**：当前项目的 GitCode PR 列表；选中后显示 AI 审查意见（严重度、触发条件、系统影响、
   证据 `path:line`、验证方法、覆盖缺口）与"审查是否基于最新提交"。
+- **点击执行审查**：未审查 / 已过期 / 失败的 PR 详情里有「开始审查」（或「重新审查」「重试审查」）按钮。
+  点击后宿主以**后台任务**执行控制器 `review run --pr N`，页面每 2 秒轮询进度（获取提交 → 同步 base/head
+  知识 → 调用模型 → 校验证据 → 写报告），完成后自动刷新列表与详情。首次审查会为 base/head 提交构建知识快照，
+  可能需要几分钟；模型未就绪时按钮禁用并提示去「模型配置」。
 
 ## 组成
 
@@ -75,6 +79,8 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | GET | `/recsdk-review/api/jobs/<jobId>` | 构建进度与结果 |
 | GET | `/recsdk-review/api/pulls?project=` | PR 列表（`offline=1` / `refresh=1`） |
 | GET | `/recsdk-review/api/pulls/<number>?project=` | PR 详情与审查结果 |
+| POST | `/recsdk-review/api/pulls/<number>/review` | 启动真实审查 `{project}` → `{job_id}`（后台任务） |
+| GET | `/recsdk-review/api/jobs/<jobId>` | 后台任务进度（知识同步 / PR 审查共用） |
 | GET | `/recsdk-review/api/health` | 控制器健康状态 |
 | GET | `/recsdk-review/api/harness-models` | DeepSeek Harness 已配置的提供方/模型（含 base_url、凭据环境变量提示） |
 | GET | `/recsdk-review/api/model-config?project=` | 控制器当前模型路由与就绪检查 |

@@ -74,6 +74,12 @@ window.__ModuleLoader__.load({
       'review.failed': '失败',
       'review.sectionTitle': 'AI 审查',
       'review.emptyTitle': '该 PR 还没有审查结果',
+      'review.start': '开始审查',
+      'review.reviewAgain': '重新审查',
+      'review.retry': '重试审查',
+      'review.runningHint': '正在后台执行：获取提交、同步知识、调用模型审查，可能需要几分钟；完成后自动刷新。',
+      'review.startHint': '点击后在后台执行：同步 base/head 知识 → 调用 Harness 模型审查 → 生成报告。',
+      'review.modelRequired': '模型路由未就绪，无法执行审查（请到「模型配置」使用 Harness 模型）',
       'review.emptyHint': '可稍后启动审查；结果生成后会显示在这里。',
       'review.queued': '审查排队中',
       'review.queuedHint': '已加入审查队列，完成后会自动出现结果。',
@@ -304,6 +310,12 @@ window.__ModuleLoader__.load({
       'review.failed': 'Failed',
       'review.sectionTitle': 'AI review',
       'review.emptyTitle': 'No review yet',
+      'review.start': 'Start review',
+      'review.reviewAgain': 'Review again',
+      'review.retry': 'Retry review',
+      'review.runningHint': 'Running in the background: fetching commits, syncing knowledge and calling the model; this can take a few minutes and refreshes automatically.',
+      'review.startHint': 'Runs in the background: sync base/head knowledge → Harness model review → report.',
+      'review.modelRequired': 'Model route is not ready (open Model route and use the Harness model)',
       'review.emptyHint': 'A review can be started later; results will appear here.',
       'review.queued': 'Review queued',
       'review.queuedHint': 'The review is queued and will appear here when it finishes.',
@@ -1331,6 +1343,10 @@ window.__ModuleLoader__.load({
 .rr-page .rr-branch-picker { display: flex; flex-wrap: wrap; gap: 6px; max-height: 160px; overflow: auto; }
 .rr-page .rr-chip.is-on { background: var(--dsw-alias-bg-layer-3); border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary); }
 .rr-page .rr-form-error { color: var(--rr-critical); font-size: 11.5px; overflow-wrap: anywhere; }
+.rr-page .rr-review-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.rr-page .rr-review-actions-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rr-page .rr-errorbox-sm { margin-top: 0; }
+.rr-page .rr-review-progress { margin-top: 0; max-height: 132px; }
 .rr-page .rr-settings {
   min-height: 0;
   overflow: auto;
@@ -2042,6 +2058,43 @@ window.__ModuleLoader__.load({
         h(BulletBlock, { title: t('lists.risksToVerify'), items: asLines(review.risks_to_verify) }),
         h(BulletBlock, { title: t('lists.coverageGaps'), items: asLines(review.coverage_gaps) }),
         h(BulletBlock, { title: t('lists.verificationPlan'), items: asLines(review.verification_plan) })
+      );
+    }
+
+    function ReviewActions(props) {
+      const t = props.t;
+      const job = isObject(props.job) ? props.job : null;
+      const kind = asText(props.kind, 'none');
+      const running = Boolean(job && job.status === 'running');
+      const failed = Boolean(job && job.status === 'error');
+      const progress = job && Array.isArray(job.progress) ? job.progress.slice(-8) : [];
+      const needsReview = kind === 'none' || kind === 'stale' || kind === 'failed';
+      if (!running && !failed && !needsReview) return null;
+      const label = running
+        ? t('review.running')
+        : (kind === 'stale' ? t('review.reviewAgain') : (kind === 'failed' ? t('review.retry') : t('review.start')));
+      return h('div', { className: 'rr-review-actions' },
+        h('div', { className: 'rr-review-actions-row' },
+          h('button', {
+            type: 'button',
+            className: 'rr-btn rr-btn-primary rr-btn-sm',
+            onClick: function () { if (props.onReview && !running) props.onReview(); },
+            disabled: running || props.disabled === true,
+            title: props.disabledReason || '',
+          }, running ? t('review.running') : label),
+          h('span', { className: 'rr-muted', style: { fontSize: '11px' } },
+            running ? t('review.runningHint') : t('review.startHint'))
+        ),
+        failed
+          ? h('div', { className: 'rr-errorbox rr-errorbox-sm', role: 'alert' },
+            h('div', { className: 'rr-errorbox-text' }, asText(job.error, t('review.failedHint'))))
+          : null,
+        running && progress.length
+          ? h('div', { className: 'rr-knowledge-progress rr-review-progress' },
+            progress.map(function (line, index) {
+              return h('div', { key: index, className: 'rr-knowledge-progress-line' }, line);
+            }))
+          : null
       );
     }
 
@@ -2881,7 +2934,15 @@ window.__ModuleLoader__.load({
             h('h2', { className: 'rr-section-title' }, t('review.sectionTitle')),
             findingsTotal > 0 ? h('span', { className: 'rr-section-count' }, fill(t('review.findingsCount'), { n: findingsTotal })) : null
           ),
-          h(ReviewBody, { review: review, job: job, t: t })
+          h(ReviewBody, { review: review, job: job, t: t }),
+          h(ReviewActions, {
+            kind: kind,
+            job: props.reviewJob || null,
+            onReview: props.onReview,
+            disabled: props.reviewDisabled === true,
+            disabledReason: props.reviewDisabledReason,
+            t: t,
+          })
         ),
         h('section', { className: 'rr-section' },
           h('div', { className: 'rr-section-head' },
@@ -2945,6 +3006,7 @@ window.__ModuleLoader__.load({
       const [knowledgeTick, setKnowledgeTick] = React.useState(0);
       const [knowledgeNotice, setKnowledgeNotice] = React.useState('');
       const [syncJob, setSyncJob] = React.useState(null);
+      const [reviewJob, setReviewJob] = React.useState(null);
       const [logsOpen, setLogsOpen] = React.useState(true);
       const [settingsOpen, setSettingsOpen] = React.useState(false);
       // ---- PR 列表与详情状态 ----
@@ -3175,8 +3237,7 @@ window.__ModuleLoader__.load({
 
       // 7) 知识库同步任务轮询
       React.useEffect(function () {
-        if (!syncJob || syncJob.status !== 'running') return undefined;
-        let active = true;
+        if (!syncJob || syncJob.status !== 'running') return undefined;        let active = true;
         const timer = setInterval(function () {
           (async function () {
             try {
@@ -3203,6 +3264,34 @@ window.__ModuleLoader__.load({
           clearInterval(timer);
         };
       }, [syncJob]);
+
+      // 8) PR 审查任务轮询（完成/失败后刷新详情与列表）
+      React.useEffect(function () {
+        const job = reviewJob && reviewJob.job;
+        if (!job || job.status !== 'running' || !job.job_id) return undefined;
+        let active = true;
+        const timer = setInterval(function () {
+          (async function () {
+            try {
+              const data = await fetchJSON(API_BASE + '/jobs/' + encodeURIComponent(job.job_id), undefined);
+              if (!active || !isObject(data)) return;
+              setReviewJob({ number: reviewJob.number, job: data });
+              if (data.status === 'done') {
+                setDetailReloadKey(function (value) { return value + 1; });
+                setReloadKey(function (value) { return value + 1; });
+              }
+            } catch (error) {
+              if (active) {
+                setReviewJob({ number: reviewJob.number, job: { ...job, status: 'error', error: errorText(error) } });
+              }
+            }
+          })();
+        }, 2000);
+        return function () {
+          active = false;
+          clearInterval(timer);
+        };
+      }, [reviewJob && reviewJob.job && reviewJob.job.job_id, reviewJob && reviewJob.job && reviewJob.job.status]);
 
       React.useEffect(function () {
         if (selected === null || selected === undefined) setListPane('list');
@@ -3308,6 +3397,12 @@ window.__ModuleLoader__.load({
       const repoId = asText(repoObject.id, activeProject ? asText(activeProject.repo_url, t('common.unknown')) : t('common.unknown'));
       const generated = listData && listData.generated_at ? formatDate(listData.generated_at) : t('common.none');
       const activeFilters = normalizedQuery !== '' || stateFilter !== 'all';
+      const modelChecks = health && isObject(health.checks) ? health.checks : {};
+      const modelReady = ['model_provider', 'model_protocol', 'model_endpoint', 'model_name', 'model_credential']
+        .every(function (key) { return modelChecks[key] === true; });
+      const modelBlockReason = health && isObject(health.errors)
+        ? asText(Object.values(health.errors)[0], '')
+        : '';
 
       function refresh() {
         setReloadKey(function (value) { return value + 1; });
@@ -3326,6 +3421,21 @@ window.__ModuleLoader__.load({
       function clearFilters() {
         setQuery('');
         setStateFilter('all');
+      }
+
+      async function startReview() {
+        if (selected === null || selected === undefined || !projectId) return;
+        const number = selected;
+        try {
+          const data = await postJSON(API_BASE + '/pulls/' + encodeURIComponent(String(number)) + '/review',
+            { project: projectId });
+          if (!isObject(data) || data.ok === false || !data.job_id) {
+            throw new Error(asText(data && data.error, '') || 'review failed');
+          }
+          setReviewJob({ number: number, job: { job_id: data.job_id, status: 'running', progress: [] } });
+        } catch (reviewError) {
+          setReviewJob({ number: number, job: { status: 'error', error: errorText(reviewError), progress: [] } });
+        }
       }
 
       function goBack() {
@@ -3419,7 +3529,15 @@ window.__ModuleLoader__.load({
           })
         );
       } else {
-        detailContent = h(DetailView, { key: String(selected), detail: detail, t: t });
+        detailContent = h(DetailView, {
+          key: String(selected),
+          detail: detail,
+          t: t,
+          reviewJob: reviewJob && reviewJob.number === selected ? reviewJob.job : null,
+          onReview: startReview,
+          reviewDisabled: !modelReady,
+          reviewDisabledReason: modelReady ? '' : (modelBlockReason || t('review.modelRequired')),
+        });
       }
 
       const headerTitle = h('div', { className: 'rr-head-title' },

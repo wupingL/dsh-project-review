@@ -37,6 +37,7 @@ function resolveOptions(config) {
     : path.join(root, 'config', 'recsdk.json');
   const timeout = Number(value.cliTimeoutMs);
   const syncTimeout = Number(value.syncTimeoutMs);
+  const reviewTimeout = Number(value.reviewTimeoutMs);
   const bridgePort = Number(value.bridgePort);
   return {
     root,
@@ -44,6 +45,7 @@ function resolveOptions(config) {
     configFile,
     cliTimeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 120000,
     syncTimeoutMs: Number.isFinite(syncTimeout) && syncTimeout > 0 ? syncTimeout : 1800000,
+    reviewTimeoutMs: Number.isFinite(reviewTimeout) && reviewTimeout > 0 ? reviewTimeout : 3600000,
     bridgePort: Number.isInteger(bridgePort) && bridgePort > 0 && bridgePort < 65536 ? bridgePort : 55114,
   };
 }
@@ -120,7 +122,7 @@ function runCli(options, args, timeoutMs = options.cliTimeoutMs, input = null) {
 
 /** 短期缓存 + 并发去重：列表/详情查询都会启动一次 Python 进程。 */
 /** 长期运行的任务（知识库构建）：边跑边收集 stderr 进度行，stdout 结束时解析 JSON。 */
-function runCliJob(options, args, timeoutMs) {
+function runCliJob(options, args, timeoutMs, extraEnv = {}) {
   const job = {
     job_id: `job-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     status: 'running',
@@ -137,7 +139,7 @@ function runCliJob(options, args, timeoutMs) {
       cwd: options.root,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', ...extraEnv },
     });
   } catch (error) {
     job.status = 'error';
@@ -186,6 +188,11 @@ function runCliJob(options, args, timeoutMs) {
       if (data && typeof data === 'object' && data.error) {
         job.status = 'error';
         job.error = String(data.error);
+      } else if (data && typeof data === 'object' && data.ready === false) {
+        // 例如 review run 的 doctor 门禁：把具体缺项返回给页面。
+        const errors = data.errors && typeof data.errors === 'object' ? Object.values(data.errors) : [];
+        job.status = 'error';
+        job.error = errors.length ? String(errors[0]) : '控制器未就绪';
       } else if (code === 0) {
         job.status = 'done';
         job.result = data;
@@ -895,6 +902,25 @@ function createService(options, hostBridge, modelBridge) {
     return hostBridge.models();
   }
 
+  /** 为一个 PR 启动真实审查（后台任务，stderr 进度行会被收集）。 */
+  function startReview(projectId, number) {
+    const numeric = Number(number);
+    if (!Number.isInteger(numeric) || numeric <= 0) throw new Error('非法的 PR 编号');
+    const args = [];
+    if (projectId) args.push('--project', String(projectId));
+    args.push('review', 'run', '--pr', String(numeric));
+    const job = runCliJob(options, args, Math.max(options.reviewTimeoutMs, 60000), { RECSDK_PROGRESS: '1' });
+    job.kind = 'review';
+    job.number = numeric;
+    job.project = projectId || null;
+    jobs.set(job.job_id, job);
+    if (jobs.size > 30) {
+      const oldest = [...jobs.keys()].slice(0, jobs.size - 30);
+      for (const key of oldest) jobs.delete(key);
+    }
+    return job;
+  }
+
   async function harnessModels(providerFilter) {
     if (!hostBridge) return { available: false, providers: [], reason: '宿主桥不可用' };
     const data = await hostBridge.harnessModels();
@@ -1002,7 +1028,7 @@ function createService(options, hostBridge, modelBridge) {
   }
 
   return {
-    projects, branches, knowledge, probe, importProject, startSync, job,
+    projects, branches, knowledge, probe, importProject, startSync, startReview, job,
     modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
     useHarness, bridgeChat, bridgeModels,
     listPulls, showPull, health,
@@ -1171,6 +1197,17 @@ function createRouteHandler(options, service) {
       }
 
       // ---- PR 列表与详情 -----------------------------------------------
+      const reviewMatch = /^\/recsdk-review\/api\/pulls\/(\d+)\/review$/.exec(pathname);
+      if (reviewMatch && method === 'POST') {
+        try {
+          const payload = await readJsonBody(req);
+          const job = service.startReview(payload.project || projectId, Number(reviewMatch[1]));
+          json(res, 202, { ok: true, job_id: job.job_id });
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
       if (pathname === `${ROUTE_PREFIX}/pulls`) {
         const body = await service.listPulls({ offline, refresh, projectId });
         if (body && body.source === 'error') {

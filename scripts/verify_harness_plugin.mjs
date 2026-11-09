@@ -175,6 +175,12 @@ elif args[:1] == ['model'] and 'set' in args:
                      "model_credential": False},
           "errors": {"model_credential": "credential is missing"},
           "secrets_policy": "no secrets"})
+elif args[:1] == ['review'] and 'run' in args:
+    number = args[args.index('--pr') + 1] if '--pr' in args else '0'
+    print("pr #%s：获取 PR 提交" % number, file=sys.stderr, flush=True)
+    time.sleep(0.05)
+    print("pr #%s：调用模型执行系统级审查" % number, file=sys.stderr, flush=True)
+    emit({"job": "fp123", "report": "state/reports/%s/fp123" % number, "current": True})
 elif 'list' in args:
     emit({"generated_at": "2026-11-07T00:00:00+00:00",
           "repo": {"url": "https://gitcode.com/Ascend/RecSDK_for_lingqu",
@@ -452,6 +458,26 @@ async function main() {
     check('GET /pulls/432?project 200', detail.status === 200
       && detail.body && Array.isArray(detail.body.review.findings) && detail.body.review.findings.length === 1);
     check('详情含证据行号', detail.body.review.findings[0].evidence[0].line === 12);
+
+    // 点击未审查 PR 触发审查：启动后台任务并收集进度
+    const startedReview = await callRoute(routes, '/recsdk-review/api/pulls/432/review', 'POST',
+      { project: 'recsdk' });
+    check('POST /pulls/432/review 返回 job_id', startedReview.status === 202 && Boolean(startedReview.body && startedReview.body.job_id));
+    let reviewJob = null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const polled = await callRoute(routes, '/recsdk-review/api/jobs/' + startedReview.body.job_id);
+      reviewJob = polled.body;
+      if (reviewJob && reviewJob.status !== 'running') break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    check('审查任务完成并返回报告', Boolean(reviewJob && reviewJob.status === 'done'
+      && reviewJob.result && reviewJob.result.current === true));
+    check('审查任务收集到进度行', Boolean(reviewJob && Array.isArray(reviewJob.progress)
+      && reviewJob.progress.some((line) => line.indexOf('审查') >= 0)), reviewJob && JSON.stringify(reviewJob.progress));
+
+    const badReview = await callRoute(routes, '/recsdk-review/api/pulls/0/review', 'POST', { project: 'recsdk' });
+    check('拒绝非法编号的审查请求', Boolean(badReview.body && badReview.body.ok === false
+      && typeof badReview.body.error === 'string'));
 
     const health = await callRoute(routes, '/recsdk-review/api/health');
     check('GET /health 200 且 ok=false', health.status === 200 && health.body && health.body.ok === false);

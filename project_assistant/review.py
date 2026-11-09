@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import time
 from pathlib import Path
 from .backends import artifact_identity, create_model
@@ -9,6 +11,12 @@ from .context import ANALYZER, Context
 from .gitcode import GitCode
 from .model import GUARD, REVIEW_SCHEMA, expert
 from .state import State
+
+
+def progress(message):
+    """向父进程输出进度行（仅在设置 RECSDK_PROGRESS=1 时，避免污染普通 CLI 输出）。"""
+    if os.environ.get("RECSDK_PROGRESS") == "1":
+        print(message, file=sys.stderr, flush=True)
 
 
 class Reviews:
@@ -94,6 +102,7 @@ class Reviews:
 
     def execute(self, job, *, historical=False):
         pr = job["pr"]
+        progress(f"pr #{job['number']}：获取 PR 提交")
         source = pr.get("source_git_url") or pr.get("head", {}).get("repo", {}).get("clone_url")
         if not source:
             full_name = pr.get("head", {}).get("repo", {}).get("full_name")
@@ -102,8 +111,11 @@ class Reviews:
         merge_base = self.git.merge_base(job["base_sha"], job["head_sha"])
         changed = self.git.changed(merge_base, job["head_sha"])
         # Fixed commits, never a moving branch ref, for this review's snapshots.
+        progress(f"pr #{job['number']}：同步 base 提交的知识（可能需要较久）")
         base_sid = self.context.sync(job["base_sha"], publish=False)
+        progress(f"pr #{job['number']}：同步 head 提交的知识（可能需要较久）")
         head_sid = self.context.sync(job["head_sha"], publish=False)
+        progress(f"pr #{job['number']}：检索变更路径的知识上下文")
         base_pack = self.context.query(base_sid, paths=changed)
         head_pack = self.context.query(head_sid, paths=changed)
         head_workspace = self.git.workspace(job["head_sha"])
@@ -114,6 +126,7 @@ class Reviews:
         diff_truncated = len(patch) > limit
         folder = self.config.repo_state / "reports" / job["number"] / job["fingerprint"]
         folder.mkdir(parents=True, exist_ok=True)
+        progress(f"pr #{job['number']}：调用模型执行系统级审查（{len(changed)} 个变更文件）")
         metadata = {k: v for k, v in job.items() if k != "pr"}
         metadata.update(merge_base=merge_base, base_snapshot=base_sid, head_snapshot=head_sid,
                         changed_files=changed, generated_at=now(), ci=self.api.ci_evidence(pr),
@@ -136,6 +149,7 @@ class Reviews:
         prompt += "\nPR diff：\n" + patch[:limit]
         result = self.model.invoke(prompt, REVIEW_SCHEMA, head_workspace, folder / "model.json",
                                    sources={"head": head_workspace, "target": base_workspace, "merge_base": before_workspace})
+        progress(f"pr #{job['number']}：校验审查证据（路径与行号）")
         self.validate_findings(result, [head_workspace, base_workspace, before_workspace])
         result["coverage_gaps"] += [metadata["ci"]["coverage_gap"],
                                     "未在本机执行 PR 代码、构建、测试或 Ascend 性能实测。"]
@@ -147,6 +161,7 @@ class Reviews:
         atomic_json(folder / "review.json", {"metadata": metadata, "review": result})
         atomic_json(folder / "status.json", {"current": current, "checked_at": now()})
         self.render(folder, metadata, result, current)
+        progress(f"pr #{job['number']}：写入报告（current={current}）")
         if current:
             (folder / "STALE.txt").unlink(missing_ok=True)
             atomic_json(folder.parent / "latest.json", {"report": str(folder), "current": True,

@@ -102,12 +102,12 @@ class Reviews:
 
     def execute(self, job, *, historical=False):
         pr = job["pr"]
-        progress(f"pr #{job['number']}：获取 PR 提交")
+        progress(f"pr #{job['number']}：获取 PR 提交（优先主仓库）")
         source = pr.get("source_git_url") or pr.get("head", {}).get("repo", {}).get("clone_url")
         if not source:
             full_name = pr.get("head", {}).get("repo", {}).get("full_name")
             source = "https://gitcode.com/" + full_name if full_name else self.config.get("repo_url")
-        self.git.fetch_head(source, job["head_sha"])
+        self.git.fetch_head(source, job["head_sha"], branch=pr.get("source_branch") or pr.get("head", {}).get("ref"))
         merge_base = self.git.merge_base(job["base_sha"], job["head_sha"])
         changed = self.git.changed(merge_base, job["head_sha"])
         # Fixed commits, never a moving branch ref, for this review's snapshots.

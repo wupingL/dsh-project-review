@@ -501,8 +501,19 @@ function createModelBridge(hostBridge, options) {
   return { ensure, dispose, token: () => token };
 }
 
-function createHostBridge(ctx) {
-  function service(key) {
+/** 从模型输出中提取 JSON 对象：去掉代码围栏与前后解释。 */
+function coerceJsonObject(text) {
+  let value = String(text || '').trim();
+  const fenced = /^```(?:json|JSON)?\s*([\s\S]*?)\s*```$/.exec(value);
+  if (fenced) value = fenced[1].trim();
+  if (value.startsWith('{') && value.endsWith('}')) return value;
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+  if (start >= 0 && end > start) return value.slice(start, end + 1);
+  return value;
+}
+
+function createHostBridge(ctx) {  function service(key) {
     try {
       return typeof ctx.get === 'function' ? ctx.get(key) : undefined;
     } catch {
@@ -690,8 +701,16 @@ function createHostBridge(ctx) {
     if (!messages.length) throw new Error('请求没有可发送的消息');
     const options = { provider, model, messages };
     if (systems.length) options.system = systems.join('\n\n');
-    if (Number.isFinite(request.max_tokens)) options.maxTokens = request.max_tokens;
-    if (Number.isFinite(request.max_completion_tokens)) options.maxTokens = request.max_completion_tokens;
+    // 控制器按 task_profile 请求的输出上限偏保守（知识域 JSON 容易超限），
+    // 宿主侧统一留出余量；上限仍交给提供方裁决。
+    const requestedLimit = Number.isFinite(request.max_tokens)
+      ? request.max_tokens
+      : (Number.isFinite(request.max_completion_tokens) ? request.max_completion_tokens : 0);
+    if (requestedLimit > 0) {
+      options.maxTokens = Math.min(65536, Math.max(requestedLimit, 16384));
+    } else if (Number.isFinite(request.max_completion_tokens)) {
+      options.maxTokens = Math.min(65536, Math.max(request.max_completion_tokens, 16384));
+    }
     if (Number.isFinite(request.temperature)) options.temperature = request.temperature;
     let text = '';
     let finish = 'stop';
@@ -714,12 +733,17 @@ function createHostBridge(ctx) {
       }
     }
     if (!text.trim()) throw new Error('Harness 模型返回了空内容');
+    // 控制器要求纯 JSON 对象；模型偶尔会加代码围栏或前后解释，这里做一次清洗。
+    const wantsJson = request.response_format
+      && typeof request.response_format === 'object'
+      && String(request.response_format.type || '').indexOf('json') >= 0;
+    const content = wantsJson ? coerceJsonObject(text) : text;
     const payload = {
       id: `harness-${Date.now()}`,
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
       model: `${provider}::${model}`,
-      choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: finish }],
+      choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: finish }],
     };
     if (usage) {
       payload.usage = {

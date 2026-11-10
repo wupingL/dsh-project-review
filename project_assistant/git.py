@@ -82,20 +82,48 @@ class Git:
                 last = exc
         raise last
 
-    def fetch_head(self, url, sha):
+    def fetch_head(self, url, sha, branch=None):
+        """取得 PR head 提交。
+
+        优先从**主仓库**取：GitCode/GitLab 的 PR 提交对象在目标仓库对象库里可达，
+        `git fetch origin <sha>` 即可拿到，不需要读取（可能私有/已删除的）fork 仓库。
+        依次尝试：本地已有 → 主仓库按 SHA → 主仓库按源分支 → fork 仓库按 SHA。
+        """
         if not re.fullmatch(r"[0-9a-f]{40,64}", sha):
             raise ValueError("PR head must be a full commit SHA")
         expected_host = urlparse(self.config.get("repo_url")).hostname
-        if url.startswith("git@" + expected_host + ":"):
+        if url and url.startswith("git@" + expected_host + ":"):
             url = "https://" + expected_host + "/" + url.split(":", 1)[1]
-        canonical_repo(url)
-        if urlparse(url).hostname != expected_host:
-            raise ValueError("Fork host differs from configured Git host")
+        if url:
+            canonical_repo(url)
+            if urlparse(url).hostname != expected_host:
+                raise ValueError("Fork host differs from configured Git host")
         try:
             return self.resolve(sha)
         except RuntimeError:
-            self.command("fetch", "--no-tags", url, sha)
+            pass
+        attempts = []
+        self.initialize()
+        try:
+            self.command("fetch", "--no-tags", "origin", sha)
             return self.resolve(sha)
+        except RuntimeError as exc:
+            attempts.append(f"origin/sha: {str(exc).strip().splitlines()[-1] if str(exc).strip() else 'failed'}")
+        if branch:
+            try:
+                self.command("check-ref-format", "refs/heads/" + branch)
+                self.command("fetch", "--no-tags", "origin",
+                             f"+refs/heads/{branch}:refs/remotes/origin/{branch}")
+                return self.resolve(sha)
+            except RuntimeError as exc:
+                attempts.append(f"origin/branch {branch}: {str(exc).strip().splitlines()[-1] if str(exc).strip() else 'failed'}")
+        if url:
+            try:
+                self.command("fetch", "--no-tags", url, sha)
+                return self.resolve(sha)
+            except RuntimeError as exc:
+                attempts.append(f"fork: {str(exc).strip().splitlines()[-1] if str(exc).strip() else 'failed'}")
+        raise ValueError("无法获取 PR head 提交；已尝试 " + "；".join(attempts))
 
     def workspace(self, sha, name=None):
         sha = self.resolve(sha)

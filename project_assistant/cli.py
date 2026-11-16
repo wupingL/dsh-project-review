@@ -15,7 +15,7 @@ from .gitcode import GitCode
 from .inspect import list_pulls, show_pull
 from .projects import (import_project, knowledge_status, list_projects, model_apply,
                        model_set, model_set_credential, model_show, model_test, probe,
-                       project_branches, resolve_config, sync_knowledge)
+                       project_branches, remove_project, resolve_config, sync_knowledge)
 from .review import Reviews
 
 
@@ -69,8 +69,13 @@ def main(argv=None):
     import_cmd = project.add_parser("import")
     import_cmd.add_argument("--name")
     import_cmd.add_argument("--url", required=True)
-    import_cmd.add_argument("--local")
+    import_cmd.add_argument("--local", required=True,
+                            help="本地源码路径；不存在时会把仓库克隆到该目录")
     import_cmd.add_argument("--branches", default="")
+    remove_cmd = project.add_parser("remove")
+    remove_cmd.add_argument("--id", required=True)
+    remove_cmd.add_argument("--purge", action="store_true",
+                            help="同时删除控制器侧状态（镜像/快照/报告/worktrees），不删本地 clone")
     branches_cmd = project.add_parser("branches")
     branches_cmd.add_argument("--id", required=True)
     branches_cmd.add_argument("--refresh", action="store_true")
@@ -168,6 +173,8 @@ def main(argv=None):
             elif args.action == "import":
                 selected = [branch.strip() for branch in (args.branches or "").split(",") if branch.strip()]
                 result = import_project(args.name, args.url, args.local, selected)
+            elif args.action == "remove":
+                result = remove_project(args.id, purge=args.purge)
             else:
                 result = project_branches(args.id, refresh=args.refresh)
             print(json.dumps(result, ensure_ascii=False, indent=2))

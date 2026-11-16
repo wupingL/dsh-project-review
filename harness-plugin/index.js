@@ -1061,14 +1061,26 @@ function createService(options, hostBridge, modelBridge) {
   async function importProject(body) {
     const payload = body && typeof body === 'object' ? body : {};
     if (!payload.url) throw new Error('缺少仓库地址');
+    if (!payload.local || !String(payload.local).trim()) {
+      throw new Error('请填写本地路径：仓库源码会下载（git clone）到该目录');
+    }
     const args = ['project', 'import', '--url', String(payload.url)];
     if (payload.name) args.push('--name', String(payload.name));
-    if (payload.local) args.push('--local', String(payload.local));
+    args.push('--local', String(payload.local).trim());
     const selected = Array.isArray(payload.branches)
       ? payload.branches.map((item) => String(item)).filter(Boolean)
       : [];
     if (selected.length) args.push('--branches', selected.join(','));
-    const data = await runJson(args, Math.max(options.cliTimeoutMs, 180000));
+    const data = await runJson(args, Math.max(options.cliTimeoutMs, 1800000));
+    memo.clear();
+    return data;
+  }
+
+  async function removeProject(projectId, purge) {
+    if (!projectId) throw new Error('缺少项目 id');
+    const args = ['project', 'remove', '--id', String(projectId)];
+    if (purge === true) args.push('--purge');
+    const data = await runJson(args, Math.max(options.cliTimeoutMs, 120000));
     memo.clear();
     return data;
   }
@@ -1165,7 +1177,7 @@ function createService(options, hostBridge, modelBridge) {
   }
 
   return {
-    projects, branches, knowledge, probe, importProject, startSync, startReview, job,
+    projects, branches, knowledge, probe, importProject, removeProject, startSync, startReview, job,
     modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
     useHarness, bridgeChat, bridgeModels,
     listPulls, showPull, health, recoverReviews, autoReviewTick, postComments,
@@ -1178,8 +1190,8 @@ function createRouteHandler(options, service) {
       const url = new URL(req.url || '/', 'http://127.0.0.1');
       const pathname = url.pathname;
       const method = req.method || 'GET';
-      if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
-        json(res, 405, { error: '只支持 GET/POST' });
+      if (method !== 'GET' && method !== 'HEAD' && method !== 'POST' && method !== 'DELETE') {
+        json(res, 405, { error: '只支持 GET/POST/DELETE' });
         return;
       }
       const refresh = url.searchParams.get('refresh') === '1';
@@ -1287,6 +1299,17 @@ function createRouteHandler(options, service) {
           json(res, 200, await service.importProject(payload));
         } catch (error) {
           json(res, 200, { ok: false, created: false, error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
+      const removeMatch = /^\/recsdk-review\/api\/projects\/([^/]+)$/.exec(pathname);
+      if (removeMatch && method === 'DELETE') {
+        try {
+          const projectId = decodeURIComponent(removeMatch[1]);
+          const purge = url.searchParams.get('purge') === '1' || url.searchParams.get('purge') === 'true';
+          json(res, 200, await service.removeProject(projectId, purge));
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
         }
         return;
       }

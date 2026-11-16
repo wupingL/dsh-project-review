@@ -82,9 +82,17 @@ elif args[:1] == ['project'] and 'probe' in args:
           "branches": [{"name": "main", "default": True}, {"name": "dev", "default": False}],
           "source": "remote"})
 elif args[:1] == ['project'] and 'import' in args:
-    emit({"ok": True, "created": True,
+    local = args[args.index('--local') + 1] if '--local' in args else ''
+    if not local:
+        print(json.dumps({"error": "请填写本地路径：仓库源码会下载到该目录"}), file=sys.stderr)
+        sys.exit(1)
+    emit({"ok": True, "created": True, "clone": "cloned", "local_repo": local,
           "project": {"id": "r-1234abcd", "name": "r", "repo_url": "https://gitcode.com/o/r",
                       "branches": ["main"], "snapshots": {}, "has_mirror": False}})
+elif args[:1] == ['project'] and 'remove' in args:
+    project = args[args.index('--id') + 1] if '--id' in args else ''
+    emit({"ok": True, "removed": project, "purged": '--purge' in args, "deleted": [],
+          "local_repo": "D:/clones/" + project})
 elif args[:1] == ['project'] and 'branches' in args:
     emit({"project_id": "recsdk", "generated_at": "2026-11-07T00:00:00+00:00", "source": "local",
           "default_branch": "develop",
@@ -425,8 +433,20 @@ async function main() {
       && probe.body.default_branch === 'main'));
 
     const imported = await callRoute(routes, '/recsdk-review/api/projects/import', 'POST',
-      { url: 'https://gitcode.com/o/r', name: 'r', branches: ['main'] });
+      { url: 'https://gitcode.com/o/r', name: 'r', local: 'D:\\clones\\r', branches: ['main'] });
     check('POST /projects/import 创建项目', Boolean(imported.body && imported.body.ok && imported.body.created));
+    check('导入时把本地路径传给控制器', imported.body && imported.body.ok === true,
+      imported.body && JSON.stringify(imported.body).slice(0, 200));
+
+    const missingLocal = await callRoute(routes, '/recsdk-review/api/projects/import', 'POST',
+      { url: 'https://gitcode.com/o/r', name: 'r' });
+    check('导入缺少本地路径时拒绝', Boolean(missingLocal.body && missingLocal.body.ok === false
+      && /本地路径/.test(String(missingLocal.body.error || ''))),
+      missingLocal.body && String(missingLocal.body.error));
+
+    const removedProject = await callRoute(routes, '/recsdk-review/api/projects/recsdk-2', 'DELETE');
+    check('DELETE /projects/:id 移除项目', Boolean(removedProject.body && removedProject.body.ok === true
+      && removedProject.body.removed === 'recsdk-2'));
 
     const branches = await callRoute(routes, '/recsdk-review/api/projects/recsdk/branches');
     check('GET /projects/:id/branches 200', Boolean(branches.body

@@ -186,6 +186,15 @@ window.__ModuleLoader__.load({
       'projects.branchCount': '{n} 个分支',
       'project.active': '当前',
       'project.copyPath': '点击复制路径',
+      'project.remove': '移除',
+      'project.removeHint': '从项目列表移除（不会删除本地源码）',
+      'project.removeConfirmTitle': '移除项目',
+      'project.removeConfirm': '确定移除项目「{name}」？只移除项目配置与列表条目，本地源码不会删除。',
+      'project.removePurge': '同时删除控制器侧数据（镜像、知识快照、审查报告、worktrees）',
+      'project.removed': '已移除项目',
+      'project.removedPurged': '已移除项目并删除控制器数据',
+      'project.keptLocal': '本地源码保留在：',
+      'project.removeFailed': '移除项目失败：{message}',
       'knowledge.title': '知识库',
       'knowledge.status.missing': '未构建',
       'knowledge.status.stale': '有更新',
@@ -220,7 +229,8 @@ window.__ModuleLoader__.load({
       'import.name': '项目名称',
       'import.nameHint': '留空则使用仓库名',
       'import.local': '本地 clone 路径（可选）',
-      'import.localHint': '填写已存在的本地仓库可避免重新下载，且必须与地址一致',
+      'import.localHint': '必填：不存在时会 git clone 到这里（源码下载一份）；已存在的同仓库 clone 会直接复用',
+      'import.localRequired': '请填写本地路径：仓库源码会下载到该目录',
       'import.branches': '分支',
       'import.probe': '读取分支',
       'import.probing': '读取中…',
@@ -456,6 +466,15 @@ window.__ModuleLoader__.load({
       'projects.branchCount': '{n} branches',
       'project.active': 'Active',
       'project.copyPath': 'Click to copy the path',
+      'project.remove': 'Remove',
+      'project.removeHint': 'Remove from the project list (the local source is kept)',
+      'project.removeConfirmTitle': 'Remove project',
+      'project.removeConfirm': 'Remove "{name}"? Only the project config and list entry are deleted; the local source stays.',
+      'project.removePurge': 'Also delete controller data (mirror, snapshots, reports, worktrees)',
+      'project.removed': 'Project removed',
+      'project.removedPurged': 'Project removed and controller data deleted',
+      'project.keptLocal': 'Local source kept at: ',
+      'project.removeFailed': 'Removing the project failed: {message}',
       'knowledge.title': 'Knowledge',
       'knowledge.status.missing': 'Not built',
       'knowledge.status.stale': 'Out of date',
@@ -490,7 +509,8 @@ window.__ModuleLoader__.load({
       'import.name': 'Project name',
       'import.nameHint': 'Defaults to the repository name',
       'import.local': 'Local clone path (optional)',
-      'import.localHint': 'An existing clone avoids a fresh download and must match the URL',
+      'import.localHint': 'Required: a missing path is git-cloned here (one local copy of the source); an existing clone of the same repo is reused',
+      'import.localRequired': 'A local path is required: the repository is cloned there',
       'import.branches': 'Branches',
       'import.probe': 'Read branches',
       'import.probing': 'Reading…',
@@ -1217,6 +1237,21 @@ window.__ModuleLoader__.load({
   padding-top: 8px;
   border-top: 1px solid var(--dsw-alias-border-l1);
 }
+.rr-page .rr-project-card-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.rr-page .rr-btn-danger-text { color: var(--rr-critical); }
+.rr-page .rr-btn-danger { border-color: var(--rr-critical); color: var(--rr-critical); }
+.rr-page .rr-remove-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--rr-critical);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.rr-page .rr-remove-confirm-text { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.rr-page .rr-remove-purge { display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.rr-page .rr-remove-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .rr-page .rr-tag {
   flex: none;
   padding: 1px 6px;
@@ -2381,6 +2416,25 @@ window.__ModuleLoader__.load({
       );
     }
 
+    async function deleteJSON(path) {
+      let response;
+      try {
+        response = await fetch(path, { method: 'DELETE', cache: 'no-store' });
+      } catch (error) {
+        throw new Error(errorText(error) || 'Network error');
+      }
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (ignored) {
+        data = null;
+      }
+      if (!response.ok) {
+        throw new Error(asText(data && data.error, '') || ('HTTP ' + response.status));
+      }
+      return data;
+    }
+
     async function postJSON(path, body) {
       let response;
       try {
@@ -2484,6 +2538,7 @@ window.__ModuleLoader__.load({
                 active: project.id === props.activeId,
                 t: t,
                 onOpen: props.onOpen,
+                onRemove: props.onRemove,
               });
             }))
       );
@@ -2501,6 +2556,8 @@ window.__ModuleLoader__.load({
       const project = isObject(props.project) ? props.project : {};
       const branches = Array.isArray(project.branches) ? project.branches : [];
       const snapshots = isObject(project.snapshots) ? project.snapshots : {};
+      const [confirming, setConfirming] = React.useState(false);
+      const [purging, setPurging] = React.useState(false);
       const shown = branches.slice(0, 4);
       const extra = branches.length - shown.length;
       const branchLines = shown.map(function (ref) {
@@ -2538,14 +2595,48 @@ window.__ModuleLoader__.load({
         project.error
           ? h('div', { className: 'rr-project-error' }, project.error)
           : h('div', { className: 'rr-branch-lines' }, branchLines),
+        confirming
+          ? h('div', { className: 'rr-remove-confirm', role: 'alertdialog', 'aria-label': t('project.removeConfirmTitle') },
+              h('div', { className: 'rr-remove-confirm-text' },
+                fill(t('project.removeConfirm'), { name: asText(project.name, asText(project.id, '')) })),
+              h('label', { className: 'rr-remove-purge' },
+                h('input', {
+                  type: 'checkbox',
+                  checked: purging,
+                  onChange: function (event) { setPurging(Boolean(event && event.target && event.target.checked)); },
+                }),
+                h('span', null, t('project.removePurge'))
+              ),
+              h('div', { className: 'rr-remove-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'rr-btn rr-btn-sm rr-btn-danger',
+                  onClick: function () { if (props.onRemove) props.onRemove(project, purging); },
+                }, t('project.remove')),
+                h('button', {
+                  type: 'button',
+                  className: 'rr-btn rr-btn-sm',
+                  onClick: function () { setConfirming(false); setPurging(false); },
+                }, t('action.cancel'))
+              )
+            )
+          : null,
         h('div', { className: 'rr-project-card-foot' },
           h('span', { className: 'rr-muted' }, fill(t('projects.branchCount'), { n: branches.length })),
-          h('button', {
-            type: 'button',
-            className: 'rr-btn rr-btn-sm' + (props.active ? '' : ' rr-btn-primary'),
-            onClick: function () { props.onOpen(project.id); },
-            disabled: Boolean(project.error),
-          }, t('action.open'))
+          h('span', { className: 'rr-project-card-actions' },
+            h('button', {
+              type: 'button',
+              className: 'rr-btn rr-btn-sm rr-btn-danger-text',
+              onClick: function () { setConfirming(true); },
+              title: t('project.removeHint'),
+            }, t('project.remove')),
+            h('button', {
+              type: 'button',
+              className: 'rr-btn rr-btn-sm' + (props.active ? '' : ' rr-btn-primary'),
+              onClick: function () { props.onOpen(project.id); },
+              disabled: Boolean(project.error),
+            }, t('action.open'))
+          )
         )
       );
     }
@@ -2748,6 +2839,10 @@ window.__ModuleLoader__.load({
           setError(t('import.urlInvalid'));
           return;
         }
+        if (!local.trim()) {
+          setError(t('import.localRequired'));
+          return;
+        }
         if (branches.length && selected.length === 0) {
           setError(t('import.branchRequired'));
           return;
@@ -2816,11 +2911,12 @@ window.__ModuleLoader__.load({
               })
             ),
             h('label', { className: 'rr-field' },
-              h('span', { className: 'rr-field-label' }, t('import.local')),
+              h('span', { className: 'rr-field-label' }, t('import.local') + ' *'),
               h('input', {
                 className: 'rr-input',
                 value: local,
                 placeholder: 'D:\\path\\to\\clone',
+                required: true,
                 onChange: function (event) { setLocal(event && event.target ? event.target.value : ''); },
               }),
               h('span', { className: 'rr-field-hint' }, t('import.localHint'))
@@ -2854,7 +2950,7 @@ window.__ModuleLoader__.load({
             }, t('action.cancel')),
             h('button', {
               type: 'button', className: 'rr-btn rr-btn-primary', onClick: submit,
-              disabled: importing || !urlValid,
+              disabled: importing || !urlValid || !local.trim(),
             }, importing ? t('import.importing') : t('import.submit'))
           )
         )
@@ -3610,6 +3706,28 @@ window.__ModuleLoader__.load({
         }
       }
 
+      async function removeProject(project, purge) {
+        if (!project || !project.id) return;
+        try {
+          const query = purge ? '?purge=1' : '';
+          const data = await deleteJSON(API_BASE + '/projects/' + encodeURIComponent(project.id) + query);
+          if (!isObject(data) || data.ok === false) {
+            throw new Error(asText(data && data.error, '') || 'remove failed');
+          }
+          setProjectsReload(function (value) { return value + 1; });
+          const message = purge ? t('project.removedPurged') : t('project.removed');
+          setImportNotice(message + (data.local_repo ? '；' + t('project.keptLocal') + data.local_repo : ''));
+          if (projectId === project.id) {
+            setProjectId('');
+            setView('landing');
+            setKnowledge(null);
+            setSelected(null);
+          }
+        } catch (error) {
+          setImportNotice(fill(t('project.removeFailed'), { message: errorText(error) }));
+        }
+      }
+
       function checkKnowledge() {
         setKnowledgeNotice('');
         setKnowledgeTick(function (value) { return value + 1; });
@@ -3881,6 +3999,7 @@ window.__ModuleLoader__.load({
             t: t,
             onOpen: openProject,
             onImport: openImport,
+            onRemove: removeProject,
             onRetry: function () { setProjectsReload(function (value) { return value + 1; }); },
           })
           : h('div', { className: 'rr-workspace' },

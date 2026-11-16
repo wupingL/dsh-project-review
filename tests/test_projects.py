@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import tempfile
@@ -107,10 +107,77 @@ class ProjectRegistryTests(unittest.TestCase):
             self.assertIn("model_backend", config_value)
             self.assertNotIn("credential_file", config_value["model_backend"])
 
-            again = projects.import_project("other-name", "https://gitcode.com/demo/demo-repo")
+            again = projects.import_project("other-name", "https://gitcode.com/demo/demo-repo", str(repo))
             self.assertFalse(again["created"])
             self.assertEqual(again["project"]["id"], project_id)
             self.assertEqual(len(projects.load_registry()["projects"]), 2)
+
+    def test_import_requires_local_path(self):
+        repo = self.root / "needs-local"
+        make_repo(repo)
+        with self.patch_paths():
+            with self.assertRaises(ValueError) as caught:
+                projects.import_project("x", "https://gitcode.com/demo/x")
+            self.assertIn("本地路径", str(caught.exception))
+
+    def test_import_clones_source_into_missing_local_path(self):
+        source = self.root / "source-repo"
+        make_repo(source, branches=("main",))
+        target = self.root / "clones" / "fresh"
+        with self.patch_paths(), patch.object(projects, "canonical_url",
+                                              return_value=str(source)):
+            imported = projects.import_project("fresh", "https://gitcode.com/demo/fresh",
+                                               str(target), ["main"])
+        self.assertTrue(imported["created"])
+        self.assertEqual(imported["clone"], "cloned")
+        self.assertTrue((target / ".git").is_dir())
+        self.assertTrue((target / "README.md").is_file())
+        self.assertEqual(Path(imported["local_repo"]), target.resolve())
+
+    def test_import_rejects_nonempty_dir_without_git(self):
+        source = self.root / "source-repo-2"
+        make_repo(source)
+        target = self.root / "not-a-repo"
+        target.mkdir()
+        (target / "file.txt").write_text("x", encoding="utf-8")
+        with self.patch_paths():
+            with self.assertRaises(ValueError) as caught:
+                projects.import_project("bad", "https://gitcode.com/demo/bad", str(target), ["main"])
+            self.assertIn("空目录", str(caught.exception))
+
+    def test_remove_project_keeps_local_source_and_optionally_purges_state(self):
+        repo = self.root / "removable"
+        make_repo(repo)
+        with self.patch_paths():
+            imported = projects.import_project("removable", "https://gitcode.com/demo/removable",
+                                               str(repo), ["main"])
+            project_id = imported["project"]["id"]
+            config_path = self.config_dir / (project_id + ".json")
+            self.assertTrue(config_path.is_file())
+
+            removed = projects.remove_project(project_id)
+            self.assertTrue(removed["ok"])
+            self.assertFalse(config_path.exists())
+            self.assertTrue(repo.is_dir())  # 本地源码不删
+            self.assertNotIn(project_id, [item["id"] for item in projects.load_registry()["projects"]])
+
+    def test_remove_project_purges_controller_state(self):
+        repo = self.root / "purgeable"
+        make_repo(repo)
+        with self.patch_paths():
+            imported = projects.import_project("purgeable", "https://gitcode.com/demo/purgeable",
+                                               str(repo), ["main"])
+            project_id = imported["project"]["id"]
+            from project_assistant.common import Config
+            config = Config(self.config_dir / (project_id + ".json"))
+            repo_state = config.state / "repositories" / config.key
+            atomic_json(repo_state / "refs.json", {"main": {"structural": "s1"}})
+            self.assertTrue(repo_state.is_dir())
+
+            removed = projects.remove_project(project_id, purge=True)
+            self.assertTrue(removed["purged"])
+            self.assertFalse(repo_state.exists())
+            self.assertIn(str(repo_state), removed["deleted"])
 
     def test_probe_rejects_mismatched_local_origin_and_bad_url(self):
         repo = self.root / "mismatch"
@@ -173,7 +240,7 @@ class ProjectRegistryTests(unittest.TestCase):
                     projects.import_project("unsafe", "https://gitcode.com/demo/unsafe", str(repo), [unsafe])
 
     def test_model_show_and_set_never_store_credentials(self):
-        repo = self.root / "model-project"
+        repo = self.root / "modelp"
         make_repo(repo)
         with self.patch_paths():
             imported = projects.import_project("modelp", "https://gitcode.com/demo/modelp", str(repo), ["main"])
@@ -198,7 +265,7 @@ class ProjectRegistryTests(unittest.TestCase):
             self.assertNotIn("secret", stored.lower())
 
     def test_model_set_validates_url_and_model(self):
-        repo = self.root / "model-invalid"
+        repo = self.root / "modeli"
         make_repo(repo)
         with self.patch_paths():
             imported = projects.import_project("modeli", "https://gitcode.com/demo/modeli", str(repo), ["main"])
@@ -211,7 +278,7 @@ class ProjectRegistryTests(unittest.TestCase):
                 projects.model_set(project_id, provider="openai", model="x", base_url="https://api.example.com")
 
     def test_model_credential_roundtrip_never_echoes_secret(self):
-        repo = self.root / "model-key"
+        repo = self.root / "modelk"
         make_repo(repo)
         with self.patch_paths():
             imported = projects.import_project("modelk", "https://gitcode.com/demo/modelk", str(repo), ["main"])

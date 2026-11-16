@@ -240,19 +240,26 @@ def _name_suggestion(url):
 
 
 def probe(url, local=None):
-    """读取远端（或本地 clone）的分支列表与默认分支。"""
+    """读取分支列表与默认分支。
+
+    ``local`` 可以是已存在的本地 clone（校验 origin），也可以是尚未创建的目标目录
+    （此时按远端探测，导入时再把源码克隆进去）。
+    """
     canonical = _validate_repo_url(url)
     suggestion = _name_suggestion(url)
+    local_path = None
+    use_local = False
     if local:
-        local_path = Path(local).resolve()
-        if not local_path.is_dir():
-            raise ValueError(f"本地路径不存在：{local_path}")
-        try:
-            origin = _git(["-C", str(local_path), "remote", "get-url", "origin"])
-        except RuntimeError:
-            raise ValueError("本地目录不是带有 origin 的 Git 仓库") from None
-        if canonical_repo(origin) != canonical:
-            raise ValueError("本地 clone 的 origin 与填写地址不一致")
+        local_path = Path(local).expanduser().resolve()
+        use_local = local_path.is_dir() and any(local_path.iterdir())
+        if use_local:
+            try:
+                origin = _git(["-C", str(local_path), "remote", "get-url", "origin"])
+            except RuntimeError:
+                raise ValueError("本地目录不是带有 origin 的 Git 仓库") from None
+            if canonical_repo(origin) != canonical:
+                raise ValueError("本地 clone 的 origin 与填写地址不一致")
+    if use_local:
         branches = _local_branches(local_path)
         default = _local_default_branch(local_path)
         source = "local"
@@ -271,13 +278,42 @@ def probe(url, local=None):
         raise ValueError("未读取到任何分支，请检查仓库地址或本地路径")
     if default not in branches:
         default = branches[0]
-    return {"ok": True,
-            "repo_url": url,
-            "canonical": canonical,
-            "name_suggestion": suggestion,
-            "default_branch": default,
-            "branches": [{"name": name, "default": name == default} for name in branches],
-            "source": source}
+    value = {"ok": True,
+             "repo_url": url,
+             "canonical": canonical,
+             "name_suggestion": suggestion,
+             "default_branch": default,
+             "branches": [{"name": name, "default": name == default} for name in branches],
+             "source": source}
+    if local_path is not None:
+        value["local"] = str(local_path)
+        value["will_clone"] = not use_local
+    return value
+
+
+def _prepare_local_clone(url, local):
+    """确保本地路径有一份源码：空/不存在则克隆，已有匹配 origin 的仓库则直接复用。"""
+    canonical = _validate_repo_url(url)
+    target = Path(local).expanduser().resolve()
+    if target.exists():
+        if not target.is_dir():
+            raise ValueError(f"本地路径不是目录：{target}")
+        if any(target.iterdir()):
+            if not (target / ".git").is_dir():
+                raise ValueError("本地路径非空且不是 Git 仓库；请选择空目录或已有 clone 的目录")
+            try:
+                origin = _git(["-C", str(target), "remote", "get-url", "origin"])
+            except RuntimeError:
+                raise ValueError("本地 Git 仓库缺少 origin，无法确认与仓库地址一致") from None
+            if canonical_repo(origin) != canonical:
+                raise ValueError("本地仓库 origin 与填写的仓库地址不一致")
+            return target, "reused"
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    _git(["clone", "--no-tags", canonical_url(url), str(target)], timeout=3600)
+    if not (target / ".git").is_dir():
+        raise ValueError("克隆未完成：本地路径下没有 Git 仓库")
+    return target, "cloned"
 
 
 def canonical_url(url):
@@ -294,7 +330,7 @@ def _check_branch(name):
 
 
 def import_project(name, url, local=None, branches=None):
-    """导入项目：注册配置 + 写入注册表；按 canonical 仓库地址幂等。"""
+    """导入项目：确保本地有源码、注册配置并写入注册表；按 canonical 仓库地址幂等。"""
     canonical = _validate_repo_url(url)
     for entry in _entries():
         try:
@@ -302,12 +338,15 @@ def import_project(name, url, local=None, branches=None):
         except Exception:  # noqa: BLE001
             continue
         if existing.repo_id == canonical:
-            return {"ok": True, "created": False, "project": project_view(entry)}
+            return {"ok": True, "created": False, "clone": "reused", "project": project_view(entry)}
+    if not local or not str(local).strip():
+        raise ValueError("请填写本地路径：仓库源码会下载（git clone）到该目录")
+    local_path, clone_action = _prepare_local_clone(url, local)
     template_path = CONFIG_DIR / "recsdk.json"
     template = read_json(template_path, {}) or {}
     selected = [_check_branch(branch) for branch in (branches or [])]
     if not selected:
-        probed = probe(url, local)
+        probed = probe(url, str(local_path))
         selected = [probed["default_branch"]]
     project_name = (name or "").strip() or _name_suggestion(url)
     base_id = _slug(project_name) + "-" + digest(canonical)[:8]
@@ -329,8 +368,8 @@ def import_project(name, url, local=None, branches=None):
         "domains": {},
         "review_rules": [],
     }
-    if local:
-        value["local_repo"] = Path(local).resolve().as_posix()
+    if local_path:
+        value["local_repo"] = local_path.as_posix()
     if isinstance(template.get("model_backend"), dict):
         # 只复用路由参数；凭据文件路径属于原项目的状态目录，绝不能跨项目复制。
         backend = {key: value for key, value in template["model_backend"].items()
@@ -344,7 +383,48 @@ def import_project(name, url, local=None, branches=None):
     registry.setdefault("default", registry.get("default") or project_id)
     save_registry(registry)
     entry = find_project(project_id)
-    return {"ok": True, "created": True, "project": project_view(entry)}
+    return {"ok": True, "created": True, "clone": clone_action,
+            "local_repo": local_path.as_posix(), "project": project_view(entry)}
+
+
+def remove_project(project_id, purge=False):
+    """从注册表移除项目。
+
+    - 默认只删注册表条目与项目配置文件；
+    - ``purge=True`` 时同时删除控制器侧状态（镜像/快照/报告/worktrees）；
+    - 本地 clone 目录永远不删（那是用户的源码），只在返回值里告知路径。
+    """
+    entry = find_project(project_id)
+    if entry is None:
+        raise ValueError(f"未加载的项目：{project_id}")
+    config_path = config_path_of(entry)
+    config = None
+    try:
+        config = Config(config_path)
+    except Exception:  # noqa: BLE001 - 配置损坏也允许移除
+        config = None
+    registry = load_registry()
+    remaining = [item for item in registry.get("projects") or [] if item.get("id") != project_id]
+    registry["projects"] = remaining
+    if registry.get("default") == project_id:
+        registry["default"] = remaining[0]["id"] if remaining else None
+    save_registry(registry)
+    deleted = []
+    if config_path.is_file():
+        config_path.unlink()
+        deleted.append(str(config_path))
+    if purge and config is not None:
+        import shutil
+        repo_state = _repo_state_of(config)
+        if repo_state.is_dir():
+            shutil.rmtree(repo_state, ignore_errors=True)
+            deleted.append(str(repo_state))
+        worktrees = config.state.parent / "worktrees" / config.key[:8]
+        if worktrees.is_dir():
+            shutil.rmtree(worktrees, ignore_errors=True)
+            deleted.append(str(worktrees))
+    return {"ok": True, "removed": project_id, "purged": bool(purge), "deleted": deleted,
+            "local_repo": (config.get("local_repo") if config else "") or ""}
 
 
 # --------------------------------------------------------------------------- branches

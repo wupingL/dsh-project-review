@@ -43,7 +43,7 @@ plugin_manager install_bundle target = "<克隆目录绝对路径>\\harness-plug
 ### 4. 首次配置
 
 1. **模型**：打开「代码检视」→「模型配置」→ 点「使用 Harness 当前模型（免配置）」。插件会在本机 loopback 起模型桥并把控制器路由指向它，无需 API Key。
-2. **项目**：项目页点「导入项目」，填 GitCode/GitLab HTTPS 仓库地址（可选本地 clone 路径），选择分支。
+2. **项目**：项目页点「导入项目」，填 GitCode/GitLab HTTPS 仓库地址和**本地路径（必填）**——路径不存在时会自动 `git clone` 把源码下载到该目录；已有同仓库 clone 则直接复用。选分支后导入（项目卡片上的「移除」可从列表删除项目，默认不删本地源码）。
 3. **凭据**：设置 `GITCODE_TOKEN` 环境变量（读取 PR/评论需要读权限；提交评论需要 `pull_requests` 写权限，可在 <https://gitcode.com/setting/token-classic> 生成）。不要写进配置文件。
 4. **知识库**：切换分支后首次会自动构建知识快照（大仓库耗时较长，建议构建完成后再审查）。
 

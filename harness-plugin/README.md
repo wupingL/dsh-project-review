@@ -1,4 +1,4 @@
-# RecSDK 代码检视（DSH 插件 bundle）
+﻿# RecSDK 代码检视（DSH 插件 bundle）
 
 把 `project-assistant` 接入 DeepSeek Harness Web UI：侧栏「代码检视」整页。页面是一个项目控制台：
 
@@ -73,7 +73,8 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | --- | --- | --- |
 | GET | `/recsdk-review/api/projects` | 项目列表 + 各分支快照指针 |
 | GET | `/recsdk-review/api/projects/probe?url=&local=` | 探测远端/本地分支 |
-| POST | `/recsdk-review/api/projects/import` | 导入项目 `{url,name,local,branches}` |
+| POST | `/recsdk-review/api/projects/import` | 导入项目 `{url,name,local,branches}`；`local` 必填，不存在时把仓库克隆到该路径 |
+| DELETE | `/recsdk-review/api/projects/<id>?purge=1` | 移除项目（`purge=1` 同时删除镜像/快照/报告/worktrees，永不删本地源码） |
 | GET | `/recsdk-review/api/projects/<id>/branches?refresh=1` | 分支列表 |
 | GET | `/recsdk-review/api/projects/<id>/knowledge?ref=&refresh=1` | 知识库状态 |
 | POST | `/recsdk-review/api/projects/<id>/knowledge/sync` | 启动构建 `{ref,mode,fetch}` → `{job_id}` |
@@ -186,6 +187,16 @@ PR 上常已有人工或其他工具的评论，审查与评论都会考虑：
   - **标题/关键词相近**（只对行内评论或短评论启用）：标记「可能相关评论」，仍可人工勾选提交。
 - **提交阶段**：真正提交前再查一次已有评论，同行重复的再次跳过并在结果里说明。
 
+## 项目管理：导入（会下载源码）与移除
+
+- **导入**：项目页「导入项目」填 HTTPS 仓库地址 **和本地路径（必填）**：
+  - 本地路径不存在（或为空目录）→ 控制器执行 `git clone`，把**源码下载一份**到该路径；
+  - 本地路径已有同仓库 clone → 校验 origin 后直接复用，不重复下载；
+  - 本地路径非空且不是 Git 仓库 → 拒绝并提示换目录。
+  分支来自远端（或已有 clone）探测结果，选好后保存为项目配置。
+- **移除**：项目卡片「移除」→ 二次确认。默认只删项目配置与列表条目；勾选「同时删除控制器侧数据」
+  会删除镜像、知识快照、审查报告与 worktrees。**本地源码目录永远不删除**，提示里会显示其路径。
+
 ## 本地路径（代码镜像 / 知识库）
 
 页面直接显示本地路径，点击路径文字即复制：
@@ -235,7 +246,7 @@ plugin_manager remove_bundle target = "@local/recsdk-review"
 ## 验证
 
 ```powershell
-# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，63 项检查
+# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，66 项检查
 node scripts\verify_harness_plugin.mjs
 
 # 2) 控制器只读命令

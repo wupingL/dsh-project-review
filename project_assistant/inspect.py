@@ -532,6 +532,7 @@ def _existing_comment(value):
         "id": _text(value.get("id")),
         "author": _text(value.get("author")),
         "line": _int(value.get("line")),
+        "match": _text(value.get("match")) or "line",
         "excerpt": _text(value.get("excerpt")),
     }
 

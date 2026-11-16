@@ -108,6 +108,7 @@ window.__ModuleLoader__.load({
       'comment.resultSummary': '成功 {posted} 条，失败 {failed} 条。',
       'comment.failed': '评论提交失败',
       'comment.existingBadge': '已有相同评论',
+      'comment.existingRelatedBadge': '可能相关评论',
       'discussion.title': '已有评论处理情况',
       'discussion.addressed': '已处理',
       'discussion.open': '仍未处理',
@@ -377,6 +378,7 @@ window.__ModuleLoader__.load({
       'comment.resultSummary': '{posted} posted, {failed} failed.',
       'comment.failed': 'Posting comments failed',
       'comment.existingBadge': 'Existing comment',
+      'comment.existingRelatedBadge': 'Related comment',
       'discussion.title': 'Existing comments',
       'discussion.addressed': 'Handled',
       'discussion.open': 'Still open',
@@ -2189,7 +2191,7 @@ window.__ModuleLoader__.load({
                   className: 'rr-finding rr-sev-' + group.severity + (posted ? ' rr-finding-posted' : ''),
                 },
                   h('div', { className: 'rr-finding-head' },
-                    canSelect && !posted && !finding.existing_comment
+                    canSelect && !posted && !(finding.existing_comment && finding.existing_comment.match === 'line')
                       ? h('input', {
                           type: 'checkbox',
                           className: 'rr-finding-check',
@@ -2211,7 +2213,10 @@ window.__ModuleLoader__.load({
                         ? h('span', {
                             className: 'rr-badge rr-existing-badge',
                             title: asText(finding.existing_comment.excerpt, ''),
-                          }, t('comment.existingBadge') + ' @' + (asText(finding.existing_comment.author, '') || '?'))
+                          }, (finding.existing_comment.match === 'line'
+                            ? t('comment.existingBadge')
+                            : t('comment.existingRelatedBadge'))
+                            + ' @' + (asText(finding.existing_comment.author, '') || '?'))
                         : null
                     )
                   ),

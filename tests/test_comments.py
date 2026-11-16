@@ -214,6 +214,16 @@ class PostFindingsTests(unittest.TestCase):
         self.assertEqual(result["posted"], 1)
         self.assertEqual(result["existing_comment_count"], 1)
         self.assertEqual(result["items"][0]["existing_comment"]["id"], "c1")
+        self.assertEqual(result["items"][0]["existing_comment"]["match"], "line")
+
+    def test_weak_title_match_is_flagged_but_not_skipped(self):
+        existing = [{"id": "c9", "body": "反向缩放缺失：请确认 1/sqrt(attention_dim) 的传递",
+                     "user": {"login": "bob"}, "resolved": False, "comment_type": "pr_comment"}]
+        api = FakeApi(self.pr, comments=existing)
+        result = self.run_post(api, FakeGit({"src/a.py": {12}}), self.report(), ["F1"], dry_run=False)
+        self.assertEqual(result["posted"], 1)
+        self.assertEqual(result["skipped_existing"], [])
+        self.assertEqual(result["items"][0]["existing_comment"]["match"], "title")
 
     def test_all_duplicates_raise(self):
         existing = [{"id": "c1", "body": "这里缺少缩放", "user": {"login": "alice"},
@@ -245,6 +255,11 @@ class ExistingCommentTests(unittest.TestCase):
         title_comment = {"id": "c3", "body": "反向缩放缺失：请确认 1/sqrt(attention_dim) 的传递",
                          "line": None, "path": None, "resolved": False}
         self.assertIs(find_overlapping_comment(findings()[0], [title_comment]), title_comment)
+
+    def test_long_bot_summary_does_not_count_as_duplicate(self):
+        summary = {"id": "bot", "body": "变更摘要 " + "本 PR 更新训练脚本与算子绑定，涉及 ops_rec 与缩放 等关键词。" * 20,
+                   "line": None, "path": None, "resolved": False, "comment_type": "pr_comment"}
+        self.assertIsNone(find_overlapping_comment(findings()[0], [summary]))
 
 
 class CommentApiTests(unittest.TestCase):

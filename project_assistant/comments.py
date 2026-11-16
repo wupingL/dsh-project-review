@@ -90,8 +90,23 @@ def normalize_comments(rows):
     return result
 
 
+def overlap_strength(finding, comment, window=3):
+    """重复判断强度：line=同文件同行（强），title=标题/关键词相近（弱，需人工确认）。"""
+    evidence = _evidence(finding) or {}
+    path, line = evidence.get("path"), evidence.get("line") or 0
+    comment_line = comment.get("line")
+    if isinstance(comment_line, int) and isinstance(line, int) and line > 0:
+        if abs(comment_line - line) <= window:
+            if not (comment.get("path") and path) or comment["path"] == path:
+                return "line"
+    return "title"
+
+
 def find_overlapping_comment(finding, comments, window=3):
-    """判断审查意见是否与已有评论重复：同文件同行（±window）优先，其次标题关键词重合。"""
+    """判断审查意见是否与已有评论重复：同文件同行（±window）优先，其次标题关键词重合。
+
+    关键词兜底只对行内评论（有行号）或短评论启用，避免把长篇 PR 总结/Bot 摘要误判为重复。
+    """
     comments = comments if isinstance(comments, list) else []
     if not comments:
         return None
@@ -110,17 +125,24 @@ def find_overlapping_comment(finding, comments, window=3):
     if len(title_key) < 4:
         return None
     title_tokens = _tokens(title)
-    for comment in comments:
-        body_key = _normalized_text(comment.get("body"))
+
+    def matches(comment):
+        body = str(comment.get("body") or "")
+        body_key = _normalized_text(body)
         if not body_key:
-            continue
+            return False
         if title_key in body_key or title_key[:20] in body_key:
+            return True
+        body_tokens = _tokens(body)
+        shared = title_tokens & body_tokens
+        return len(shared) >= 4 and len(title_tokens) > 0 and len(shared) / len(title_tokens) >= 0.6
+
+    for comment in comments:
+        if comment.get("line") is not None and matches(comment):
             return comment
-        body_tokens = _tokens(comment.get("body"))
-        if title_tokens and body_tokens:
-            shared = title_tokens & body_tokens
-            if len(shared) >= 3 and len(shared) / len(title_tokens) >= 0.5:
-                return comment
+    for comment in comments:
+        if comment.get("line") is None and len(str(comment.get("body") or "")) <= 300 and matches(comment):
+            return comment
     return None
 
 
@@ -356,18 +378,22 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
     kept = []
     skipped_existing = []
     for plan in plans:
-        match = find_overlapping_comment(
-            {"title": plan["title"], "evidence": [{"path": plan["path"], "line": plan["line"]}]}, existing)
-        if match and not match.get("resolved") and not force:
+        reference = {"title": plan["title"], "evidence": [{"path": plan["path"], "line": plan["line"]}]}
+        match = find_overlapping_comment(reference, existing)
+        strength = overlap_strength(reference, match) if match else None
+        # 只有「同行」级别的重复才自动跳过；关键词相近的交给人工判断。
+        if match and strength == "line" and not match.get("resolved") and not force:
             note_author = match.get("author") or "其他人"
             notes.append(f"{plan['finding']} 与 {note_author} 的已有评论重复，已跳过")
             skipped_existing.append(plan["finding"])
             continue
         if match:
             plan["existing_comment"] = {key: match.get(key) for key in ("id", "author", "line", "resolved")}
+            plan["existing_comment"]["match"] = strength
         kept.append(plan)
     if not kept:
-        raise ValueError("所选意见在 PR 已有未解决评论，已全部跳过（如需重复提交请加 --force）")
+        raise ValueError("所选意见在 PR 已有未解决评论（" + "、".join(skipped_existing)
+                         + "），已全部跳过；如需重复提交请加 --force")
     plans = kept
 
     result = {"ok": True, "dry_run": dry_run, "head_sha": head_sha, "mode": mode,

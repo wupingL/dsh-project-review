@@ -20,7 +20,7 @@ def gitcode_token():
 
 
 class GitCode:
-    def __init__(self, config, transport=None):
+    def __init__(self, config, transport=None, write_transport=None):
         self.config = config
         parsed = urlparse(config.get("repo_url"))
         self.repo_path = parsed.path.strip("/").removesuffix(".git")
@@ -28,9 +28,13 @@ class GitCode:
         if urlparse(self.base_url).scheme != "https":
             raise ValueError("GitCode API must use HTTPS")
         self.transport = transport
+        self.write_transport = write_transport
+
+    def path(self, suffix):
+        return "/repos/" + "/".join(quote(p, safe="") for p in self.repo_path.split("/")) + suffix
 
     def get(self, suffix, **params):
-        path = "/repos/" + "/".join(quote(p, safe="") for p in self.repo_path.split("/")) + suffix
+        path = self.path(suffix)
         if self.transport:
             return self.transport(path, params)
         url = self.base_url + path + ("?" + urlencode(params) if params else "")
@@ -43,6 +47,26 @@ class GitCode:
                 return json.load(response)
         except HTTPError as exc:
             raise RuntimeError(f"GitCode HTTP {exc.code}; check read access and GITCODE_TOKEN") from None
+
+    def post(self, suffix, payload):
+        """写操作（提交评论）。默认只缺省在调用方 dry-run 时才会被调用。"""
+        path = self.path(suffix)
+        if self.write_transport:
+            return self.write_transport(path, payload)
+        token = gitcode_token()
+        if not token:
+            raise RuntimeError("缺少 GITCODE_TOKEN；提交评论需要带 pull_requests 写权限的 token")
+        headers = {"Accept": "application/json", "Content-Type": "application/json; charset=utf-8",
+                   "User-Agent": "project-assistant/0.1", "Authorization": "Bearer " + token}
+        # 官方文档要求 access_token 查询参数；部分实现只认 Bearer 头，两者同时带上。
+        url = self.base_url + path + "?" + urlencode({"access_token": token})
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        try:
+            with urlopen(Request(url, data=body, headers=headers, method="POST"), timeout=30) as response:
+                return json.load(response)
+        except HTTPError as exc:
+            # 不回显 URL（内含 access_token）与响应正文中的敏感信息。
+            raise RuntimeError(f"GitCode 评论接口 HTTP {exc.code}；请检查 token 权限或评论位置") from None
 
     def pulls(self):
         # Full open inventory on every poll: target-tip changes and draft transitions

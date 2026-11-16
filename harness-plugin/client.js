@@ -88,6 +88,25 @@ window.__ModuleLoader__.load({
       'comparison.previous': '上一版审查 head：{sha}',
       'comparison.fixedTitle': '已修复',
       'comparison.openTitle': '仍存在 / 部分修复',
+      'comment.select': '选择该审查意见',
+      'comment.selected': '已选 {n} 条',
+      'comment.mode': '评论口径',
+      'comment.mode.issue': '问题',
+      'comment.mode.suggestion': '建议',
+      'comment.mode.question': '疑问',
+      'comment.submit': '提交评论到 PR',
+      'comment.hint': '勾选意见后先预览，再确认提交到 PR 对应代码处',
+      'comment.posting': '提交中…',
+      'comment.previewTitle': '确认要提交的评论',
+      'comment.previewHint': '以下 {n} 条将提交到 PR；不在 diff 新增行的会作为 PR 级评论。',
+      'comment.confirm': '确认提交',
+      'comment.cancel': '取消',
+      'comment.postedBadge': '已评论',
+      'comment.inline': '行内',
+      'comment.general': 'PR 评论',
+      'comment.resultTitle': '评论提交完成',
+      'comment.resultSummary': '成功 {posted} 条，失败 {failed} 条。',
+      'comment.failed': '评论提交失败',
       'review.modelRequired': '模型路由未就绪，无法执行审查（请到「模型配置」使用 Harness 模型）',
       'review.emptyHint': '可稍后启动审查；结果生成后会显示在这里。',
       'review.queued': '审查排队中',
@@ -333,6 +352,25 @@ window.__ModuleLoader__.load({
       'comparison.previous': 'Last reviewed head: {sha}',
       'comparison.fixedTitle': 'Fixed',
       'comparison.openTitle': 'Still open / partially fixed',
+      'comment.select': 'Select this finding',
+      'comment.selected': '{n} selected',
+      'comment.mode': 'Comment tone',
+      'comment.mode.issue': 'Issue',
+      'comment.mode.suggestion': 'Suggestion',
+      'comment.mode.question': 'Question',
+      'comment.submit': 'Post to PR',
+      'comment.hint': 'Select findings, preview the comments, then confirm to post them at the matching code lines',
+      'comment.posting': 'Posting…',
+      'comment.previewTitle': 'Confirm comments to post',
+      'comment.previewHint': '{n} comment(s) will be posted; ones whose line is not in the diff become PR-level comments.',
+      'comment.confirm': 'Post comments',
+      'comment.cancel': 'Cancel',
+      'comment.postedBadge': 'Posted',
+      'comment.inline': 'inline',
+      'comment.general': 'PR comment',
+      'comment.resultTitle': 'Comments posted',
+      'comment.resultSummary': '{posted} posted, {failed} failed.',
+      'comment.failed': 'Posting comments failed',
       'review.modelRequired': 'Model route is not ready (open Model route and use the Harness model)',
       'review.emptyHint': 'A review can be started later; results will appear here.',
       'review.queued': 'Review queued',
@@ -1701,9 +1739,9 @@ window.__ModuleLoader__.load({
 
     function groupFindings(findings) {
       const groups = { critical: [], high: [], medium: [], low: [], other: [] };
-      (Array.isArray(findings) ? findings : []).forEach(function (finding) {
+      (Array.isArray(findings) ? findings : []).forEach(function (finding, index) {
         const safeFinding = isObject(finding) ? finding : {};
-        groups[normalizeSeverity(safeFinding.severity)].push(safeFinding);
+        groups[normalizeSeverity(safeFinding.severity)].push({ finding: safeFinding, index: index });
       });
       return SEVERITY_ORDER.map(function (severity) {
         return { severity: severity, items: groups[severity] };
@@ -2017,6 +2055,13 @@ window.__ModuleLoader__.load({
       const t = props.t;
       const review = isObject(props.review) ? props.review : null;
       const job = isObject(props.job) ? props.job : {};
+      // 评论选择状态必须无条件初始化（组件有多个提前返回分支）。
+      const [selected, setSelected] = React.useState({});
+      const [commentMode, setCommentMode] = React.useState('issue');
+      const [commentPreview, setCommentPreview] = React.useState(null);
+      const [commentPosting, setCommentPosting] = React.useState(false);
+      const [commentError, setCommentError] = React.useState('');
+      const [commentResult, setCommentResult] = React.useState(null);
       const kind = reviewKind(review);
       const activity = jobActivity(review, job);
       const attempts = nonNegative(review && review.job_attempts, nonNegative(job.attempts, 0));
@@ -2048,6 +2093,51 @@ window.__ModuleLoader__.load({
       const findings = Array.isArray(review.findings) ? review.findings : [];
       const groups = groupFindings(findings);
 
+      // ---- 审查意见评论（多选 → 提交到 PR 对应代码处） ----
+      const postedById = {};
+      (Array.isArray(review.posted_comments) ? review.posted_comments : []).forEach(function (item) {
+        if (isObject(item) && item.finding) postedById[String(item.finding)] = item;
+      });
+      const findingIds = findings.map(function (_, index) { return 'F' + (index + 1); });
+      const selectedIds = findingIds.filter(function (id) { return Boolean(selected[id]) && !postedById[id]; });
+      const commentable = Boolean(props.prNumber && props.projectId && props.commentEnabled !== false
+        && kind === 'current');
+      const canSelect = commentable && findings.length > 0;
+      function toggleFinding(id) {
+        setCommentError('');
+        setCommentResult(null);
+        setCommentPreview(null);
+        setSelected(function (previous) {
+          const next = Object.assign({}, previous);
+          if (next[id]) delete next[id]; else next[id] = true;
+          return next;
+        });
+      }
+      async function submitComments(confirm) {
+        if (!selectedIds.length || commentPosting) return;
+        setCommentPosting(true);
+        setCommentError('');
+        try {
+          const data = await postJSON(API_BASE + '/pulls/' + encodeURIComponent(String(props.prNumber)) + '/comments',
+            { project: props.projectId, findings: selectedIds, mode: commentMode, confirm: confirm === true });
+          if (!isObject(data) || (data.ok === false && !Array.isArray(data.items))) {
+            throw new Error(asText(data && data.error, '') || t('comment.failed'));
+          }
+          if (confirm === true) {
+            setCommentResult(data);
+            setCommentPreview(null);
+            setSelected({});
+            if (props.onCommented) props.onCommented();
+          } else {
+            setCommentPreview(data);
+          }
+        } catch (error) {
+          setCommentError(errorText(error));
+        } finally {
+          setCommentPosting(false);
+        }
+      }
+
       return h('div', { className: 'rr-review-body' },
         intent ? h('div', { className: 'rr-review-lead' },
           h('div', { className: 'rr-kicker-label' }, t('review.intent')),
@@ -2069,24 +2159,44 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'rr-finding-group-label' }, t('severity.' + group.severity)),
                 h('span', { className: 'rr-finding-group-count' }, String(group.items.length))
               ),
-              group.items.map(function (finding, index) {
+              group.items.map(function (item) {
+                const finding = item.finding;
+                const findingId = 'F' + (item.index + 1);
+                const posted = postedById[findingId];
                 const title = asText(finding.title, t('finding.untitled'));
                 const confidence = confidenceLabel(finding.confidence, t);
                 const evidence = Array.isArray(finding.evidence)
                   ? finding.evidence
                   : (finding.evidence ? [finding.evidence] : []);
-                const evidenceEntries = evidence.map(function (item) {
-                  const path = isObject(item) ? asText(item.path, '') : asText(item, '');
-                  const line = isObject(item) && item.line !== null && item.line !== undefined ? String(item.line) : '';
-                  const reason = isObject(item) ? asText(item.reason, '') : '';
+                const evidenceEntries = evidence.map(function (entry) {
+                  const path = isObject(entry) ? asText(entry.path, '') : asText(entry, '');
+                  const line = isObject(entry) && entry.line !== null && entry.line !== undefined ? String(entry.line) : '';
+                  const reason = isObject(entry) ? asText(entry.reason, '') : '';
                   return { path: path, line: line, reason: reason };
-                }).filter(function (item) { return item.path || item.reason; });
-                return h('article', { key: group.severity + '-' + index, className: 'rr-finding rr-sev-' + group.severity },
+                }).filter(function (entry) { return entry.path || entry.reason; });
+                return h('article', {
+                  key: findingId,
+                  className: 'rr-finding rr-sev-' + group.severity + (posted ? ' rr-finding-posted' : ''),
+                },
                   h('div', { className: 'rr-finding-head' },
+                    canSelect && !posted
+                      ? h('input', {
+                          type: 'checkbox',
+                          className: 'rr-finding-check',
+                          checked: Boolean(selected[findingId]),
+                          onChange: function () { toggleFinding(findingId); },
+                          title: t('comment.select'),
+                          'aria-label': t('comment.select') + ' ' + findingId,
+                        })
+                      : null,
                     h('div', { className: 'rr-finding-title' }, title),
                     h('div', { className: 'rr-finding-tags' },
                       h('span', { className: 'rr-badge rr-sev-badge' }, t('severity.' + group.severity)),
-                      confidence ? h('span', { className: 'rr-badge' }, t('finding.confidence') + ' ' + confidence) : null
+                      confidence ? h('span', { className: 'rr-badge' }, t('finding.confidence') + ' ' + confidence) : null,
+                      posted
+                        ? h('span', { className: 'rr-badge rr-posted-badge' },
+                            t('comment.postedBadge') + ' · ' + (posted.inline ? t('comment.inline') : t('comment.general')))
+                        : null
                     )
                   ),
                   h('div', { className: 'rr-finding-fields' },
@@ -2110,6 +2220,63 @@ window.__ModuleLoader__.load({
             );
           })
         ) : h('div', { className: 'rr-no-findings' }, t('review.noFindings')),
+        canSelect ? h('div', { className: 'rr-comment-box' },
+          h('div', { className: 'rr-comment-bar' },
+            h('span', { className: 'rr-comment-count' }, fill(t('comment.selected'), { n: selectedIds.length })),
+            h('label', { className: 'rr-comment-mode' },
+              h('span', { className: 'rr-muted' }, t('comment.mode')),
+              h('select', {
+                value: commentMode,
+                onChange: function (event) { setCommentMode(event.target.value); setCommentPreview(null); },
+              },
+                h('option', { value: 'issue' }, t('comment.mode.issue')),
+                h('option', { value: 'suggestion' }, t('comment.mode.suggestion')),
+                h('option', { value: 'question' }, t('comment.mode.question'))
+              )
+            ),
+            h('button', {
+              type: 'button',
+              className: 'rr-btn rr-btn-primary rr-btn-sm',
+              disabled: !selectedIds.length || commentPosting,
+              onClick: function () { submitComments(false); },
+            }, commentPosting ? t('comment.posting') : t('comment.submit')),
+            h('span', { className: 'rr-muted rr-comment-hint' }, t('comment.hint'))
+          ),
+          commentError ? h('div', { className: 'rr-errorbox rr-errorbox-sm', role: 'alert' },
+            h('div', { className: 'rr-errorbox-text' }, commentError)) : null,
+          commentPreview ? h('div', { className: 'rr-comment-preview' },
+            h('div', { className: 'rr-comment-preview-head' },
+              h('span', { className: 'rr-list-label' }, t('comment.previewTitle')),
+              h('span', { className: 'rr-muted' },
+                fill(t('comment.previewHint'), { n: (Array.isArray(commentPreview.items) ? commentPreview.items : []).length }))
+            ),
+            (Array.isArray(commentPreview.items) ? commentPreview.items : []).map(function (item, index) {
+              return h('div', { key: index, className: 'rr-comment-preview-item' },
+                h('div', { className: 'rr-comment-preview-meta' },
+                  h('span', { className: 'rr-badge' }, String(item.finding || '')),
+                  h('code', { className: 'rr-evidence-path' },
+                    asText(item.path, '') + (item.line ? ':' + String(item.line) : '')),
+                  h('span', { className: 'rr-badge' }, item.inline ? t('comment.inline') : t('comment.general'))
+                ),
+                h('pre', { className: 'rr-comment-body' }, asText(item.body, ''))
+              );
+            }),
+            h('div', { className: 'rr-comment-preview-actions' },
+              h('button', {
+                type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm', disabled: commentPosting,
+                onClick: function () { submitComments(true); },
+              }, commentPosting ? t('comment.posting') : t('comment.confirm')),
+              h('button', {
+                type: 'button', className: 'rr-btn rr-btn-sm', disabled: commentPosting,
+                onClick: function () { setCommentPreview(null); },
+              }, t('comment.cancel'))
+            )
+          ) : null,
+          commentResult ? h('div', { className: 'rr-comment-result', role: 'status' },
+            h('div', { className: 'rr-status-title' }, t('comment.resultTitle')),
+            h('div', { className: 'rr-muted' }, fill(t('comment.resultSummary'),
+              { posted: numberOr(commentResult.posted, 0), failed: numberOr(commentResult.failed, 0) }))) : null
+        ) : null,
         h(ComparisonBlock, { comparison: review && review.comparison, t: t }),
         h(BulletBlock, { title: t('lists.affectedFlows'), items: asLines(review.affected_flows) }),
         h(BulletBlock, { title: t('lists.risksToVerify'), items: asLines(review.risks_to_verify) }),
@@ -3009,7 +3176,14 @@ window.__ModuleLoader__.load({
               : null,
             findingsTotal > 0 ? h('span', { className: 'rr-section-count' }, fill(t('review.findingsCount'), { n: findingsTotal })) : null
           ),
-          h(ReviewBody, { review: review, job: job, t: t }),
+          h(ReviewBody, {
+            review: review,
+            job: job,
+            t: t,
+            prNumber: pr.number,
+            projectId: props.projectId,
+            onCommented: props.onCommented,
+          }),
           h(ReviewActions, {
             kind: kind,
             job: props.reviewJob || null,
@@ -3608,6 +3782,8 @@ window.__ModuleLoader__.load({
           key: String(selected),
           detail: detail,
           t: t,
+          projectId: projectId,
+          onCommented: retryDetail,
           reviewJob: reviewJob && reviewJob.number === selected ? reviewJob.job : null,
           onReview: startReview,
           reviewDisabled: !modelReady,

@@ -548,9 +548,32 @@ def _extended_review(view, report, metadata, review):
         "affected_flows": _strings(review.get("affected_flows")),
         "verification_plan": _strings(review.get("verification_plan")),
         "comparison": _comparison(report),
+        "posted_comments": _posted_comments(report),
         "stale_message": _stale_message(report),
     })
     return value
+
+
+def _posted_comments(report):
+    """已提交到 PR 的审查意见（评论功能的状态回显）。"""
+    data = _load_json(report / "comments.json") if report is not None else None
+    entries = data.get("comments") if isinstance(data, dict) else None
+    result = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        result.append({
+            "finding": _text(entry.get("finding")),
+            "title": _text(entry.get("title")),
+            "path": _text(entry.get("path")),
+            "line": _int(entry.get("line")),
+            "position": _int(entry.get("position")),
+            "inline": entry.get("inline") is True,
+            "mode": _text(entry.get("mode")),
+            "comment_id": _text(entry.get("comment_id")),
+            "at": _text(entry.get("at")),
+        })
+    return result
 
 
 def _comparison(report):

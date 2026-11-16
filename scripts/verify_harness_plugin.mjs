@@ -181,6 +181,17 @@ elif args[:1] == ['model'] and 'set' in args:
           "secrets_policy": "no secrets"})
 elif args[:1] == ['review'] and 'recover' in args:
     emit({"recovered": 1, "skipped": False})
+elif args[:1] == ['review'] and 'comment' in args:
+    number = args[args.index('--pr') + 1] if '--pr' in args else '0'
+    findings = [args[i + 1] for i, value in enumerate(args) if value == '--finding']
+    mode = args[args.index('--mode') + 1] if '--mode' in args else 'issue'
+    confirm = '--confirm' in args
+    emit({"ok": True, "dry_run": not confirm, "head_sha": "h" * 40, "mode": mode,
+          "items": [{"finding": f, "title": "stub", "path": "fasterrec/core/logging.py",
+                     "line": 12, "position": 12, "inline": True,
+                     "status": "posted" if confirm else "preview",
+                     "body": "【问题】stub"} for f in findings],
+          "posted": len(findings) if confirm else 0, "failed": 0, "notes": []})
 elif args[:1] == ['review'] and 'run' in args:
     number = args[args.index('--pr') + 1] if '--pr' in args else '0'
     mode = args[args.index('--mode') + 1] if '--mode' in args else 'missing'
@@ -296,7 +307,7 @@ function makeFakeCtx() {
       }
     },
   };
-  return { ctx: fake, tools, routes };
+  return { ctx: fake, tools, routes, disposers };
 }
 
 function makeFakeRes() {
@@ -343,10 +354,32 @@ async function callRoute(routes, urlPath, method = 'GET', body) {
   return res;
 }
 
+function disposeAll(disposers) {
+  for (const dispose of (Array.isArray(disposers) ? [...disposers].reverse() : [])) {
+    try { dispose(); } catch { /* ignore */ }
+  }
+}
+
+async function removeTree(target) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(target, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt === 9) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+}
+
 async function main() {
   const root = makeFakeProject();
   const stubLog = path.join(root, 'stub.log');
   process.env.STUB_LOG = stubLog;
+  let disposers = [];
+  let ctx = null;
+  let tools = null;
+  let routes = null;
   const python = process.env.RECSDK_PYTHON
     || 'D:\\GRVLLM\\ReviewWork\\project-assistant\\.venv\\Scripts\\python.exe';
   try {
@@ -354,7 +387,7 @@ async function main() {
     check('index.js 导出 apply', typeof module.apply === 'function');
     check('index.js 声明 tools 注入', Array.isArray(module.inject) && module.inject.includes('tools'));
 
-    const { ctx, tools, routes } = makeFakeCtx();
+    ({ ctx, tools, routes, disposers } = makeFakeCtx());
     module.apply(ctx, { projectRoot: root, python, cliTimeoutMs: 30000, syncTimeoutMs: 60000, bridgePort: 55999, autoReviewPollMs: 1000 });
 
     check('注册 7 个 Agent 工具', tools.size === 7, [...tools.keys()].join(','));
@@ -545,6 +578,31 @@ async function main() {
       && oddJob.progress.some((line) => line.indexOf('mode=auto') >= 0)),
       oddJob && JSON.stringify(oddJob.progress));
 
+    // 审查意见评论：默认只预览（dry-run），confirm 才真的提交。
+    const commentLogBefore = readFileSync(stubLog, 'utf8').length;
+    const previewComments = await callRoute(routes, '/recsdk-review/api/pulls/432/comments', 'POST',
+      { project: 'recsdk', findings: ['F1', 'F2'], mode: 'issue' });
+    check('POST /pulls/432/comments 默认 dry-run', previewComments.status === 200
+      && previewComments.body && previewComments.body.ok === true
+      && previewComments.body.dry_run === true
+      && previewComments.body.items.length === 2, previewComments.body && JSON.stringify(previewComments.body).slice(0, 400));
+    const commentLog = readFileSync(stubLog, 'utf8');
+    const previewArgs = commentLog.slice(commentLogBefore);
+    check('评论请求先传 dry-run 参数', previewArgs.indexOf('review comment --pr 432 --mode issue --finding F1 --finding F2') >= 0
+      && previewArgs.indexOf('--confirm') < 0, previewArgs.split('\n').slice(-3).join(' | '));
+
+    const postedComments = await callRoute(routes, '/recsdk-review/api/pulls/432/comments', 'POST',
+      { project: 'recsdk', findings: ['F1'], mode: 'suggestion', confirm: true });
+    check('POST /pulls/432/comments confirm 提交评论', postedComments.status === 200
+      && postedComments.body && postedComments.body.ok === true
+      && postedComments.body.dry_run === false
+      && postedComments.body.posted === 1, postedComments.body && JSON.stringify(postedComments.body).slice(0, 400));
+
+    const badComment = await callRoute(routes, '/recsdk-review/api/pulls/432/comments', 'POST',
+      { project: 'recsdk', findings: [] });
+    check('拒绝空的评论请求', Boolean(badComment.body && badComment.body.ok === false
+      && typeof badComment.body.error === 'string'));
+
     const badReview = await callRoute(routes, '/recsdk-review/api/pulls/0/review', 'POST', { project: 'recsdk' });
     check('拒绝非法编号的审查请求', Boolean(badReview.body && badReview.body.ok === false
       && typeof badReview.body.error === 'string'));
@@ -577,8 +635,8 @@ async function main() {
     check('工具拒绝非法 PR 编号', rejected);
 
     const badRoot = mkdtempSync(path.join(tmpdir(), 'recsdk-plugin-bad-'));
+    const bad = makeFakeCtx();
     try {
-      const bad = makeFakeCtx();
       module.apply(bad.ctx, { projectRoot: badRoot, python: path.join(badRoot, 'missing-python.exe'), cliTimeoutMs: 5000 });
       const badList = await callRoute(bad.routes, '/recsdk-review/api/pulls');
       check('控制器失败时返回可渲染的错误（502）', badList.status === 502 && badList.body
@@ -586,10 +644,13 @@ async function main() {
       const badProjects = await callRoute(bad.routes, '/recsdk-review/api/projects');
       check('控制器失败时项目接口返回 500 JSON', badProjects.status === 500 && Boolean(badProjects.body && badProjects.body.error));
     } finally {
-      rmSync(badRoot, { recursive: true, force: true });
+      disposeAll(bad.disposers);
+      await removeTree(badRoot);
     }
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    // 先停掉插件里的定时器（自动审查/启动清理），再删临时目录，避免子进程占住句柄。
+    disposeAll(disposers);
+    await removeTree(root);
   }
 
   console.log(`\n${checks - failures.length}/${checks} checks passed`);

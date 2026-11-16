@@ -144,6 +144,35 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
   `previous_head_sha` / `previous_report` 以便追溯。
 - 临时手工触发：`review run --pr <n> --mode deep`（强制完整语义）。
 
+## 把审查意见提交到 PR（多选评论）
+
+详情页的每条审查意见前有复选框：勾选若干条 → 选评论口径（问题 / 建议 / 疑问）→「提交评论到 PR」。
+第一次点击只做 **预览**（dry-run），确认后才真正提交到 PR。
+
+- **常用检视口径**：评论正文按「【问题·严重度】标题 → 触发场景 → 影响 → 建议 → 依据 `path:line`」组织；
+  建议口径只给修改建议，疑问口径改成向作者提问。
+- **行内定位**：用 `commit_id + path + position` 提交行内评论。`position` 用文件行号，且必须落在本次 diff
+  的新增/修改行上；不在 diff 内的意见（或平台返回 400）自动退化为 PR 级评论，并在正文用 `> 目标位置：path:line` 标注。
+- **防重复刷屏**：已提交的评论记录在报告目录 `comments.json`，页面显示「已评论」，默认跳过；`--force` 才允许重复提交。
+- **安全门槛**：报告必须 `current` 且报告 head 与 PR 当前 head 一致，否则拒绝（避免按旧行号评论）；
+  需要带 `pull_requests` 写权限的 `GITCODE_TOKEN`（与只读查询同一个变量）。
+- 接口与命令：
+
+```powershell
+# 先预览（不会对 PR 产生任何写入）
+.\.venv\Scripts\python.exe -m project_assistant.cli --project recsdk review comment --pr 413 --finding 1 --finding 2
+
+# 确认提交（需要 GITCODE_TOKEN）
+.\.venv\Scripts\python.exe -m project_assistant.cli --project recsdk review comment --pr 413 --finding 1 --finding 2 --confirm
+```
+
+```
+POST /recsdk-review/api/pulls/<number>/comments
+{"project": "recsdk", "findings": ["F1", "F2"], "mode": "issue", "confirm": false}
+```
+
+> 自动化测试与开发调试都只走 dry-run / 假传输层；不会对 RecSDK 等真实仓库提交评论。
+
 ## 本地路径（代码镜像 / 知识库）
 
 页面直接显示本地路径，点击路径文字即复制：
@@ -193,7 +222,7 @@ plugin_manager remove_bundle target = "@local/recsdk-review"
 ## 验证
 
 ```powershell
-# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，59 项检查
+# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，63 项检查
 node scripts\verify_harness_plugin.mjs
 
 # 2) 控制器只读命令

@@ -1120,6 +1120,27 @@ function createService(options, hostBridge, modelBridge) {
     });
   }
 
+  async function postComments(projectId, number, payload) {
+    const numeric = Number(number);
+    if (!Number.isInteger(numeric) || numeric <= 0) throw new Error('非法的 PR 编号');
+    const body = payload && typeof payload === 'object' ? payload : {};
+    const findings = Array.isArray(body.findings)
+      ? body.findings.map((item) => String(item)).filter((item) => /^F?\d+$/i.test(item)).slice(0, 10)
+      : [];
+    if (!findings.length) throw new Error('请选择要评论的审查意见');
+    const mode = ['issue', 'suggestion', 'question'].includes(body.mode) ? body.mode : 'issue';
+    const args = [];
+    if (projectId) args.push('--project', String(projectId));
+    args.push('review', 'comment', '--pr', String(numeric), '--mode', mode);
+    for (const id of findings) args.push('--finding', id);
+    // 默认 dry-run；只有页面明确 confirm 才真正提交到 PR。
+    if (body.confirm === true) args.push('--confirm');
+    if (body.force === true) args.push('--force');
+    const data = await runJson(args, Math.max(options.cliTimeoutMs, 120000));
+    if (body.confirm === true) memo.clear();
+    return data;
+  }
+
   async function health({ refresh = false } = {}) {
     const result = await memo('health', refresh ? 0 : 60000, async () => {
       const run = await runCli(options, ['doctor'], Math.min(options.cliTimeoutMs, 60000));
@@ -1143,7 +1164,7 @@ function createService(options, hostBridge, modelBridge) {
     projects, branches, knowledge, probe, importProject, startSync, startReview, job,
     modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
     useHarness, bridgeChat, bridgeModels,
-    listPulls, showPull, health, recoverReviews, autoReviewTick,
+    listPulls, showPull, health, recoverReviews, autoReviewTick, postComments,
   };
 }
 
@@ -1315,6 +1336,19 @@ function createRouteHandler(options, service) {
           const payload = await readJsonBody(req);
           const job = service.startReview(payload.project || projectId, Number(reviewMatch[1]), payload.mode);
           json(res, 202, { ok: true, job_id: job.job_id });
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
+      // ---- 审查意见评论 -------------------------------------------------
+      const commentMatch = /^\/recsdk-review\/api\/pulls\/(\d+)\/comments$/.exec(pathname);
+      if (commentMatch && method === 'POST') {
+        try {
+          const payload = await readJsonBody(req);
+          const result = await service.postComments(payload.project || projectId,
+            Number(commentMatch[1]), payload);
+          json(res, 200, { ok: true, ...result });
         } catch (error) {
           json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
         }

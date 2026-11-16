@@ -7,6 +7,7 @@ import shutil
 import sys
 from pathlib import Path
 from .backends import backend_checks, model_destination
+from .comments import post_findings
 from .common import ROOT, Config, read_json, run
 from .context import Context
 from .feature import Features
@@ -140,6 +141,15 @@ def main(argv=None):
     recover = review.add_parser("recover")
     recover.add_argument("--fail-running", action="store_true",
                          help="把遗留的 running 任务标记为已中断（插件启动时使用）")
+    comment = review.add_parser("comment")
+    comment.add_argument("--pr", type=int, required=True)
+    comment.add_argument("--finding", action="append", required=True,
+                         help="报告中的意见编号（F1、F2…），可重复")
+    comment.add_argument("--mode", choices=["issue", "suggestion", "question"], default="issue",
+                         help="评论口径：问题/建议/疑问")
+    comment.add_argument("--confirm", action="store_true",
+                         help="真正提交到 PR；默认只预览（dry-run）")
+    comment.add_argument("--force", action="store_true", help="允许重复提交已评论过的意见")
     feature = commands.add_parser("feature").add_subparsers(dest="action", required=True)
     design = feature.add_parser("design")
     design.add_argument("--branch", required=True)
@@ -215,6 +225,9 @@ def main(argv=None):
                 result = list_pulls(config, offline=args.offline)
             elif args.action == "show":
                 result = show_pull(config, args.pr, offline=args.offline)
+            elif args.action == "comment":
+                result = post_findings(config, args.pr, args.finding, mode=args.mode,
+                                       dry_run=not args.confirm, force=args.force)
             else:
                 reviews = Reviews(config)
                 if args.action == "recover":

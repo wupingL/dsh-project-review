@@ -146,6 +146,23 @@ class Git:
     def changed(self, base, head):
         return [p for p in self.command("diff", "--name-only", "--no-renames", "-z", base, head).split("\0") if p]
 
+    def added_lines(self, base, head, path):
+        """新文件侧「新增/修改」行号集合（行内评论只能落在这些行上）。"""
+        output = self.command("diff", "--unified=0", "--no-color", "--no-ext-diff", base, head, "--", path)
+        lines = set()
+        new_line = 0
+        for line in output.splitlines():
+            if line.startswith("@@"):
+                match = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+                if match:
+                    new_line = int(match.group(1))
+            elif line.startswith("+") and not line.startswith("+++"):
+                lines.add(new_line)
+                new_line += 1
+            elif line.startswith(" "):
+                new_line += 1
+        return lines
+
     def merge_base(self, base, head):
         return self.command("merge-base", base, head).strip()
 

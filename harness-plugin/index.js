@@ -1064,11 +1064,21 @@ function createService(options, hostBridge, modelBridge) {
     return result;
   }
 
+  /** 把上次进程被中断（Harness/控制器重启）遗留的 running 任务标记为失败，页面可重试。 */
+  async function recoverReviews(projectId) {
+    const args = [];
+    if (projectId) args.push('--project', String(projectId));
+    args.push('review', 'recover', '--fail-running');
+    const data = await runJson(args, Math.max(options.cliTimeoutMs, 60000));
+    memo.clear();
+    return data;
+  }
+
   return {
     projects, branches, knowledge, probe, importProject, startSync, startReview, job,
     modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
     useHarness, bridgeChat, bridgeModels,
-    listPulls, showPull, health,
+    listPulls, showPull, health, recoverReviews,
   };
 }
 
@@ -1445,6 +1455,25 @@ export function apply(ctx, config) {
     });
     return () => modelBridge.dispose();
   }, 'recsdk-review: model bridge');
+
+  // 启动时清理上次进程被中断（Harness/控制器重启）后残留的「进行中」任务：
+  // 只在没有别的控制器进程持有队列锁时生效，否则跳过，避免打断真实审查。
+  ctx.effect(() => {
+    (async () => {
+      let ids = [];
+      try {
+        const listed = await runJson(['project', 'list'], Math.max(options.cliTimeoutMs, 60000));
+        ids = (Array.isArray(listed && listed.projects) ? listed.projects : [])
+          .map((item) => item && item.id).filter(Boolean);
+      } catch {
+        /* project list 不可用时退回默认配置 */
+      }
+      for (const id of (ids.length ? ids : [null]).slice(0, 8)) {
+        await service.recoverReviews(id).catch(() => {});
+      }
+    })().catch(() => {});
+    return () => {};
+  }, 'recsdk-review: recover interrupted reviews');
 
   // 同源 HTTP 路由：只在 Web 组合里注册。
   // 用 ctx.inject 而不是 apply 时的 ctx.get：插件先于 webServer 发布加载，

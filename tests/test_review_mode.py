@@ -9,6 +9,7 @@ from unittest.mock import patch
 from project_assistant.common import Config, atomic_json, read_json
 from project_assistant.context import Context
 from project_assistant.review import Reviews, indexed_paths
+from project_assistant.state import State
 
 # 直接运行单个测试模块时也把 tests 目录放进路径（discover 本来就会）。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -98,6 +99,40 @@ class ReviewModeIntegrationTests(Fixture):
         with patch.object(reviews, "execute", return_value=("report", True)) as executed:
             reviews.process_one(mode="deep")
         self.assertEqual(executed.call_args.kwargs.get("mode"), "deep")
+
+
+class StaleJobTests(unittest.TestCase):
+    """进程被重启杀掉后，running 行必须能被安全清理（页面不再永久显示「进行中」）。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = State(Path(self.tmp.name) / "state.sqlite")
+        self.addCleanup(self.state.close)
+
+    def insert_job(self, status="running"):
+        self.state.db.execute(
+            "INSERT INTO jobs(id,number,payload,status,attempts,retry_at,error,report,updated) "
+            "VALUES('j1','440','{}',?,1,0,NULL,NULL,'2026-11-16T06:25:53+00:00')", (status,))
+        self.state.db.commit()
+
+    def test_interrupt_running_marks_failed_and_retryable(self):
+        self.insert_job()
+        self.assertEqual(self.state.interrupt_running("审查进程已中断"), 1)
+        row = self.state.db.execute("SELECT status,error,retry_at FROM jobs WHERE id='j1'").fetchone()
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(row["error"], "审查进程已中断")
+        self.assertEqual(row["retry_at"], 0)
+
+    def test_recover_requeues_running_for_watch_mode(self):
+        self.insert_job()
+        self.assertEqual(self.state.recover(), 1)
+        self.assertEqual(self.state.db.execute("SELECT status FROM jobs WHERE id='j1'").fetchone()["status"],
+                         "pending")
+
+    def test_interrupt_leaves_other_states_alone(self):
+        self.insert_job(status="pending")
+        self.assertEqual(self.state.interrupt_running("x"), 0)
 
 
 if __name__ == "__main__":

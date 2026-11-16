@@ -24,8 +24,22 @@ class State:
         self.db.close()
 
     def recover(self):
-        self.db.execute("UPDATE jobs SET status='pending' WHERE status='running'")
+        """Resume work after a crash (watch mode): running -> pending."""
+        cursor = self.db.execute("UPDATE jobs SET status='pending' WHERE status='running'")
         self.db.commit()
+        return cursor.rowcount
+
+    def interrupt_running(self, reason):
+        """Mark rows left 'running' by a dead process as failed so the page can retry.
+
+        Used when no controller process owns the queue (for example the Harness plugin
+        was restarted while a review CLI child was running).
+        """
+        cursor = self.db.execute(
+            "UPDATE jobs SET status='failed', error=?, retry_at=0, updated=? WHERE status='running'",
+            (reason, now()))
+        self.db.commit()
+        return cursor.rowcount
 
     @contextmanager
     def lock(self, name):

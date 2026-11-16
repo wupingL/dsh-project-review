@@ -158,6 +158,9 @@ python -m project_assistant.cli knowledge status --id <项目> --ref <分支>   
 
 - 进入工作区即自动拉取最新 PR 列表（请求带 `refresh=1`），不再提供手动「刷新」按钮。
 - 知识库的「检查更新」只保留卡片内一处；同步日志可收起，任务结束后自动收起。
+- 插件启动时会把上次进程被中断（Harness 或控制器重启）后遗留的「进行中」任务标记为失败
+  （`review recover --fail-running`），页面随即显示失败原因和「重试审查」；若另一个控制器进程
+  正持有审查队列锁则跳过，不会打断真实审查。
 
 ## Agent 工具
 
@@ -174,7 +177,7 @@ plugin_manager remove_bundle target = "@local/recsdk-review"
 ## 验证
 
 ```powershell
-# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，57 项检查
+# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，58 项检查
 node scripts\verify_harness_plugin.mjs
 
 # 2) 控制器只读命令

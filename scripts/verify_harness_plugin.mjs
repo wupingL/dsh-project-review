@@ -10,7 +10,7 @@
  *
  * 运行：node scripts/verify_harness_plugin.mjs
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -31,8 +31,12 @@ function check(name, condition, detail) {
 }
 
 const STUB = `
-import json, sys, time
+import json, os, sys, time
 args = sys.argv[1:]
+_log = os.environ.get('STUB_LOG')
+if _log:
+    with open(_log, 'a', encoding='utf-8') as handle:
+        handle.write(' '.join(sys.argv[1:]) + '\\n')
 # 去掉全局 --config/--project，让下面的子命令判断能命中
 for global_flag in ('--config', '--project'):
     while global_flag in args:
@@ -175,6 +179,8 @@ elif args[:1] == ['model'] and 'set' in args:
                      "model_credential": False},
           "errors": {"model_credential": "credential is missing"},
           "secrets_policy": "no secrets"})
+elif args[:1] == ['review'] and 'recover' in args:
+    emit({"recovered": 1, "skipped": False})
 elif args[:1] == ['review'] and 'run' in args:
     number = args[args.index('--pr') + 1] if '--pr' in args else '0'
     mode = args[args.index('--mode') + 1] if '--mode' in args else 'missing'
@@ -326,6 +332,8 @@ async function callRoute(routes, urlPath, method = 'GET', body) {
 
 async function main() {
   const root = makeFakeProject();
+  const stubLog = path.join(root, 'stub.log');
+  process.env.STUB_LOG = stubLog;
   const python = process.env.RECSDK_PYTHON
     || 'D:\\GRVLLM\\ReviewWork\\project-assistant\\.venv\\Scripts\\python.exe';
   try {
@@ -338,6 +346,12 @@ async function main() {
 
     check('注册 7 个 Agent 工具', tools.size === 7, [...tools.keys()].join(','));
     check('注册前缀路由', routes.length === 1 && routes[0].kind === 'prefix');
+
+    // 启动清理是异步的（先 project list，再逐个项目 recover）。
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const startupLog = readFileSync(stubLog, 'utf8');
+    check('启动时把中断的审查任务标记为失败', startupLog.indexOf('review recover --fail-running') >= 0,
+      startupLog.split('\n').slice(0, 4).join(' | '));
 
     const projects = await callRoute(routes, '/recsdk-review/api/projects');
     check('GET /projects 200', projects.status === 200, String(projects.status));

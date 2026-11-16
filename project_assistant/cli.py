@@ -137,6 +137,9 @@ def main(argv=None):
     show.add_argument("--pr", type=int, required=True)
     show.add_argument("--offline", action="store_true")
     review.add_parser("status")
+    recover = review.add_parser("recover")
+    recover.add_argument("--fail-running", action="store_true",
+                         help="把遗留的 running 任务标记为已中断（插件启动时使用）")
     feature = commands.add_parser("feature").add_subparsers(dest="action", required=True)
     design = feature.add_parser("design")
     design.add_argument("--branch", required=True)
@@ -214,7 +217,18 @@ def main(argv=None):
                 result = show_pull(config, args.pr, offline=args.offline)
             else:
                 reviews = Reviews(config)
-                if args.action == "status":
+                if args.action == "recover":
+                    # 只有没有别的控制器进程持有队列锁时才能动 running 行。
+                    skipped = False
+                    try:
+                        with reviews.state.lock("watch"):
+                            count = (reviews.state.interrupt_running(
+                                "审查进程已中断（控制器或 Harness 重启后未恢复），请重新开始审查。")
+                                if args.fail_running else reviews.state.recover())
+                    except OSError:
+                        skipped, count = True, 0
+                    result = {"recovered": count, "skipped": skipped}
+                elif args.action == "status":
                     result = [dict(r) for r in reviews.state.db.execute("SELECT id,number,status,attempts,error,report FROM jobs ORDER BY updated DESC")]
                 else:
                     health = doctor(config, network=args.action != "replay")

@@ -47,6 +47,8 @@ plugin_manager install_bundle target = "<克隆目录绝对路径>\\harness-plug
 3. **凭据**：设置 `GITCODE_TOKEN` 环境变量（读取 PR/评论需要读权限；提交评论需要 `pull_requests` 写权限）。不要写进配置文件。
 4. **知识库**：切换分支后首次会自动构建知识快照（大仓库耗时较长，建议构建完成后再审查）。
 
+> 仓库自带的 `config/recsdk.json`、`config/projects.json` 是示例（Ascend RecSDK 仓库）。导入自己的项目后会在 `config/` 生成新配置，可在项目页切换；不再使用示例仓库时，删除示例配置并调整 `config/projects.json` 的 `default` 即可。
+
 ### 5. 日常使用
 
 - 「代码检视」页自动拉取最新 PR。未审查 PR 点「开始审查」（自动判断快速/深度）；需要完整语义时点「深度审查」。

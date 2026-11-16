@@ -478,6 +478,7 @@ def _review_view(config, number, snapshot):
         "reviewed_at": _text(metadata.get("generated_at")) if metadata else None,
         "reviewed_head_sha": _text(metadata.get("head_sha")) if metadata else None,
         "mode": _text(metadata.get("mode")) if metadata else None,
+        "knowledge_mode": _text(metadata.get("knowledge_mode")) if metadata else None,
         "fingerprint": fingerprint,
         "findings": len(findings),
         "severity": _severities(findings),

@@ -78,7 +78,11 @@ window.__ModuleLoader__.load({
       'review.reviewAgain': '重新审查',
       'review.retry': '重试审查',
       'review.runningHint': '正在后台执行：获取提交、同步知识、调用模型审查，可能需要几分钟；完成后自动刷新。',
-      'review.startHint': '点击后在后台执行：同步 base/head 知识 → 调用 Harness 模型审查 → 生成报告。',
+      'review.startHint': '点击后在后台执行：同步目标分支/base 知识 → 自动选择快速或深度审查 → 调用 Harness 模型审查 → 生成报告。',
+      'review.deep': '深度审查',
+      'review.deepHint': '对变更源码做完整语义领域分析，较慢；自动模式在变更文件未被源码索引（如 patch/文档）时直接走快速审查。',
+      'review.fastBadge': '快速审查',
+      'review.deepBadge': '深度审查',
       'review.modelRequired': '模型路由未就绪，无法执行审查（请到「模型配置」使用 Harness 模型）',
       'review.emptyHint': '可稍后启动审查；结果生成后会显示在这里。',
       'review.queued': '审查排队中',
@@ -314,7 +318,11 @@ window.__ModuleLoader__.load({
       'review.reviewAgain': 'Review again',
       'review.retry': 'Retry review',
       'review.runningHint': 'Running in the background: fetching commits, syncing knowledge and calling the model; this can take a few minutes and refreshes automatically.',
-      'review.startHint': 'Runs in the background: sync base/head knowledge → Harness model review → report.',
+      'review.startHint': 'Runs in the background: sync the target branch/base knowledge → pick quick or deep review automatically → Harness model review → report.',
+      'review.deep': 'Deep review',
+      'review.deepHint': 'Full semantic domain analysis of the changed source (slower). Auto mode reviews quickly when the changed files are not source-indexed (patches, docs).',
+      'review.fastBadge': 'Quick review',
+      'review.deepBadge': 'Deep review',
       'review.modelRequired': 'Model route is not ready (open Model route and use the Harness model)',
       'review.emptyHint': 'A review can be started later; results will appear here.',
       'review.queued': 'Review queued',
@@ -2073,15 +2081,28 @@ window.__ModuleLoader__.load({
       const label = running
         ? t('review.running')
         : (kind === 'stale' ? t('review.reviewAgain') : (kind === 'failed' ? t('review.retry') : t('review.start')));
+      const trigger = function (reviewMode) {
+        if (running || props.disabled === true || !props.onReview) return;
+        props.onReview(reviewMode);
+      };
       return h('div', { className: 'rr-review-actions' },
         h('div', { className: 'rr-review-actions-row' },
           h('button', {
             type: 'button',
             className: 'rr-btn rr-btn-primary rr-btn-sm',
-            onClick: function () { if (props.onReview && !running) props.onReview(); },
+            onClick: function () { trigger('auto'); },
             disabled: running || props.disabled === true,
             title: props.disabledReason || '',
           }, running ? t('review.running') : label),
+          running
+            ? null
+            : h('button', {
+                type: 'button',
+                className: 'rr-btn rr-btn-sm',
+                onClick: function () { trigger('deep'); },
+                disabled: props.disabled === true,
+                title: t('review.deepHint'),
+              }, t('review.deep')),
           h('span', { className: 'rr-muted', style: { fontSize: '11px' } },
             running ? t('review.runningHint') : t('review.startHint'))
         ),
@@ -2833,6 +2854,7 @@ window.__ModuleLoader__.load({
       const review = isObject(detail.review) ? detail.review : null;
       const job = isObject(detail.job) ? detail.job : {};
       const metadata = review && isObject(review.metadata) ? review.metadata : {};
+      const knowledgeMode = review ? asText(review.knowledge_mode, '') : '';
       const [showAllFiles, setShowAllFiles] = React.useState(false);
       const [descriptionOpen, setDescriptionOpen] = React.useState(false);
 
@@ -2932,6 +2954,10 @@ window.__ModuleLoader__.load({
         h('section', { className: 'rr-section' },
           h('div', { className: 'rr-section-head' },
             h('h2', { className: 'rr-section-title' }, t('review.sectionTitle')),
+            knowledgeMode
+              ? h('span', { className: 'rr-badge' },
+                  knowledgeMode === 'fast' ? t('review.fastBadge') : t('review.deepBadge'))
+              : null,
             findingsTotal > 0 ? h('span', { className: 'rr-section-count' }, fill(t('review.findingsCount'), { n: findingsTotal })) : null
           ),
           h(ReviewBody, { review: review, job: job, t: t }),
@@ -3423,12 +3449,12 @@ window.__ModuleLoader__.load({
         setStateFilter('all');
       }
 
-      async function startReview() {
+      async function startReview(mode) {
         if (selected === null || selected === undefined || !projectId) return;
         const number = selected;
         try {
           const data = await postJSON(API_BASE + '/pulls/' + encodeURIComponent(String(number)) + '/review',
-            { project: projectId });
+            { project: projectId, mode: mode === 'deep' ? 'deep' : 'auto' });
           if (!isObject(data) || data.ok === false || !data.job_id) {
             throw new Error(asText(data && data.error, '') || 'review failed');
           }

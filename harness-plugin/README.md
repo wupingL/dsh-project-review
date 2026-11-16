@@ -65,6 +65,7 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | `configFile` | `<projectRoot>\config\recsdk.json` | 默认项目配置（`--project` 优先） |
 | `cliTimeoutMs` | `120000` | 普通命令上限（列表/详情/状态） |
 | `syncTimeoutMs` | `1800000` | 知识库构建任务上限（首次构建可能较久） |
+| `reviewTimeoutMs` | `3600000` | 单个 PR 审查任务上限（含基线/快照同步） |
 
 ## HTTP 接口（同源）
 
@@ -79,7 +80,7 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 | GET | `/recsdk-review/api/jobs/<jobId>` | 构建进度与结果 |
 | GET | `/recsdk-review/api/pulls?project=` | PR 列表（`offline=1` / `refresh=1`） |
 | GET | `/recsdk-review/api/pulls/<number>?project=` | PR 详情与审查结果 |
-| POST | `/recsdk-review/api/pulls/<number>/review` | 启动真实审查 `{project}` → `{job_id}`（后台任务） |
+| POST | `/recsdk-review/api/pulls/<number>/review` | 启动真实审查 `{project,mode:"auto"\|"deep"}` → `{job_id}`（后台任务） |
 | GET | `/recsdk-review/api/jobs/<jobId>` | 后台任务进度（知识同步 / PR 审查共用） |
 | GET | `/recsdk-review/api/health` | 控制器健康状态 |
 | GET | `/recsdk-review/api/harness-models` | DeepSeek Harness 已配置的提供方/模型（含 base_url、凭据环境变量提示） |
@@ -100,8 +101,32 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 - 按钮动作：读 `agentDefaultModel.currentSelection()` → 写控制器路由（`provider::model` 标签）→ 写入桥令牌 → 校验就绪 → 跑一次 `/models` 连通性测试。
 - 插件加载即开始监听固定端口，因此 Harness 重启后已保存的路由仍然可用；令牌持久化在 `.harness-bridge-token`，端口可用 `bridgePort` 改（默认 55114），被占用时退回临时端口（需重新点一次）。
 - 手动路径（可选）：提供方 + 模型 + API Key 直连某个 OpenAI 兼容网关。Harness 提供方 id 会自动映射为控制器后端（`codex` → codex，其它 → `deepseek`），没有 OpenAI 兼容地址的提供方会给出明确提示。
+- 输出预算：推理型模型可能把 token 预算先花在思考上，最终内容为空。桥会自动把 `max_tokens` 翻倍重试（上限 65536），控制器仍可保持保守的 `task_profiles`，不必因预算调整而重建知识快照。
 
 切换路由后，控制器的语义身份（policy）会变化，旧知识快照会显示为需要更新——这是预期行为。
+
+## 审查模式（自动快速 / 深度）
+
+审查前会先把**目标分支基线**同步到最新（`knowledge sync --ref <target>`），这样 PR 的 base 快照
+只是一次增量，而不是从几周前的分支快照全量重建。
+
+随后自动判断 head 端是否需要语义知识：
+
+| 情况 | 行为 | 耗时 |
+| --- | --- | --- |
+| 变更文件全部未被源码索引（`.patch`、文档、配置、二进制等，`coverage=inventory-only/absent`） | **快速审查**：head 只用结构快照，跳过语义领域分析，靠 diff + 工作区只读核对 | 分钟级 |
+| 任一变更文件被解析器建图（`.py`、`.c/.cpp/.h`、`.ts/.js` 等） | **深度审查**：head 建语义快照（未受影响领域直接复用 base 的语义知识） | 较久 |
+
+页面上主按钮是「开始审查」（自动选择），旁边「深度审查」强制走完整语义链路；报告页会显示
+「快速审查 / 深度审查」标记，并在覆盖缺口里写明快速模式跳过了什么。
+
+```powershell
+# 等价 CLI
+.\.venv\Scripts\python.exe -m project_assistant.cli review run --pr 413            # auto
+.\.venv\Scripts\python.exe -m project_assistant.cli review run --pr 413 --mode deep
+```
+
+同一提交重复审查直接命中已建快照；只有新提交才需要补建。
 
 ## 本地路径（代码镜像 / 知识库）
 
@@ -149,7 +174,7 @@ plugin_manager remove_bundle target = "@local/recsdk-review"
 ## 验证
 
 ```powershell
-# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，18 项检查
+# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，57 项检查
 node scripts\verify_harness_plugin.mjs
 
 # 2) 控制器只读命令
@@ -172,9 +197,7 @@ node scripts\verify_bundle_installed.mjs
 
 ## 限制（与控制器一致）
 
-- 页面是只读浏览：可以刷新 PR 列表、查看已有审查结果；**不能**在页面上发起新审查、
-  评论、审批或合并（发起审查仍由控制器 `review run` / 后续模型桥负责）。
-- 控制器当前直连 DeepSeek 的模型配置未就绪（`doctor` 不 ready）；在模型桥接通前，
-  新 PR 会显示"未审查"，这是真实状态而不是页面缺陷。
+- 页面可以发起审查（按钮触发控制器 `review run`），但**不能**在页面上评论、审批或合并 PR。
+- 快速审查不执行 head 语义领域分析：对 patch/文档类变更够用，对需要领域契约推理的变更请用「深度审查」。
 - PR 列表优先在线读取 GitCode；网络/凭据失败时回退本地缓存并在页面标注数据来源与时间。
 - 真实审查需要 Linux/CANN/NPU 的硬件验证不在本插件范围内；UI 会原样呈现覆盖缺口。

@@ -19,6 +19,11 @@ def progress(message):
         print(message, file=sys.stderr, flush=True)
 
 
+def indexed_paths(changed, coverage):
+    """变更路径中会被确定性解析器建图的源码文件（coverage == 'structural'）。"""
+    return [path for path in changed if coverage.get(path) == "structural"]
+
+
 class Reviews:
     def __init__(self, config, api=None, context=None, model=None):
         self.config = config
@@ -100,7 +105,26 @@ class Reviews:
         pr = self.api.pull(job["number"])
         return self.api.active(pr) and self.job(pr)["fingerprint"] == job["fingerprint"]
 
-    def execute(self, job, *, historical=False):
+    def head_knowledge(self, job, changed, base_sid, mode="auto"):
+        """选择 head 快照的语义/结构版本，返回 (knowledge_mode, snapshot_id)。
+
+        auto：变更文件全部未被源码索引（patch/文档/配置）时，head 语义领域分析无法描述
+        本次变更，直接使用结构快照 + diff 快速审查；deep：强制完整语义。
+        """
+        number = job["number"]
+        if mode != "deep":
+            base_coverage = self.context.coverage(base_sid, changed)
+            if not indexed_paths(changed, base_coverage):
+                progress(f"pr #{number}：探测 head 提交的结构索引")
+                head_struct = self.context.sync(job["head_sha"], semantic=False, publish=False)
+                if not indexed_paths(changed, self.context.coverage(head_struct, changed)):
+                    progress(f"pr #{number}：变更文件未被源码索引，使用快速审查（跳过 head 语义领域分析）")
+                    return "fast", head_struct
+        progress(f"pr #{number}：同步 head 提交的知识（可能需要较久）")
+        prior = base_sid if job["head_sha"] != job["base_sha"] else None
+        return "deep", self.context.sync(job["head_sha"], publish=False, prior=prior)
+
+    def execute(self, job, *, historical=False, mode="auto"):
         pr = job["pr"]
         progress(f"pr #{job['number']}：获取 PR 提交（优先主仓库）")
         source = pr.get("source_git_url") or pr.get("head", {}).get("repo", {}).get("clone_url")
@@ -110,11 +134,20 @@ class Reviews:
         self.git.fetch_head(source, job["head_sha"], branch=pr.get("source_branch") or pr.get("head", {}).get("ref"))
         merge_base = self.git.merge_base(job["base_sha"], job["head_sha"])
         changed = self.git.changed(merge_base, job["head_sha"])
+        target = job.get("target")
+        if not historical and target in self.config.get("branches"):
+            # Refresh the branch baseline first: a stale branch snapshot turns the PR base
+            # snapshot into a 6-domain rebuild instead of a small increment.
+            progress(f"pr #{job['number']}：同步目标分支基线知识（{target}）")
+            try:
+                self.context.sync(target, publish=True)
+            except Exception as exc:
+                # A baseline refresh must never block the review itself.
+                progress(f"pr #{job['number']}：基线同步失败，继续使用已有快照（{exc}）")
         # Fixed commits, never a moving branch ref, for this review's snapshots.
         progress(f"pr #{job['number']}：同步 base 提交的知识（可能需要较久）")
         base_sid = self.context.sync(job["base_sha"], publish=False)
-        progress(f"pr #{job['number']}：同步 head 提交的知识（可能需要较久）")
-        head_sid = self.context.sync(job["head_sha"], publish=False)
+        knowledge_mode, head_sid = self.head_knowledge(job, changed, base_sid, mode)
         progress(f"pr #{job['number']}：检索变更路径的知识上下文")
         base_pack = self.context.query(base_sid, paths=changed)
         head_pack = self.context.query(head_sid, paths=changed)
@@ -130,7 +163,8 @@ class Reviews:
         metadata = {k: v for k, v in job.items() if k != "pr"}
         metadata.update(merge_base=merge_base, base_snapshot=base_sid, head_snapshot=head_sid,
                         changed_files=changed, generated_at=now(), ci=self.api.ci_evidence(pr),
-                        backend=artifact_identity(self.config),
+                        backend=artifact_identity(self.config), knowledge_mode=knowledge_mode,
+                        head_snapshot_mode="structural" if knowledge_mode == "fast" else "semantic",
                         mode="historical-replay" if historical else "live-pr")
         atomic_json(folder / "input.json", {"metadata": metadata, "base_context": base_pack, "head_context": head_pack})
         prompt = GUARD + "\n执行系统级 PR review。以需求符合性、系统功能、性能、兼容性为主要审查维度。\n"
@@ -153,6 +187,9 @@ class Reviews:
         self.validate_findings(result, [head_workspace, base_workspace, before_workspace])
         result["coverage_gaps"] += [metadata["ci"]["coverage_gap"],
                                     "未在本机执行 PR 代码、构建、测试或 Ascend 性能实测。"]
+        if knowledge_mode == "fast":
+            result["coverage_gaps"].append(
+                "快速审查：变更文件未被源码索引，未对 head 做语义领域分析；上下文仅含结构索引、diff 与工作区只读核对。")
         if diff_truncated:
             result["coverage_gaps"].append("Diff 超过初始输入上限；需核对只读补查覆盖范围。")
         if base_pack["truncated"] or head_pack["truncated"]:
@@ -234,9 +271,11 @@ class Reviews:
 
     @staticmethod
     def render(folder, metadata, result, current):
+        knowledge_mode = "快速（结构索引 + diff，未做 head 语义领域分析）" \
+            if metadata.get("knowledge_mode") == "fast" else "深度（base/head 语义知识）"
         lines = [f"# PR !{metadata['number']} 系统级审查", "", f"目标：`{metadata['target']}`",
                  f"Base：`{metadata['base_sha']}`", f"Head：`{metadata['head_sha']}`",
-                 f"Merge-base：`{metadata['merge_base']}`", "",
+                 f"Merge-base：`{metadata['merge_base']}`", f"审查模式：{knowledge_mode}", "",
                  "报告只适用于这些提交；实时有效性以同目录 status.json 为准。", "",
                  "## 变更意图", "", result["intent"], "", result["summary"], "", "## 确认的问题", ""]
         for f in result["findings"]:
@@ -251,7 +290,7 @@ class Reviews:
             lines += ["## " + title, ""] + ["- " + s for s in result[key]] + [""]
         (folder / "review.md").write_text("\n".join(lines), encoding="utf-8")
 
-    def process_one(self, job_id=None):
+    def process_one(self, job_id=None, *, mode="auto"):
         if job_id:
             row = self.state.db.execute("SELECT * FROM jobs WHERE id=? AND status IN ('pending','failed')", (job_id,)).fetchone()
         else:
@@ -261,7 +300,7 @@ class Reviews:
         with self.state.db:
             self.state.db.execute("UPDATE jobs SET status='running',attempts=attempts+1,updated=? WHERE id=?", (now(), row["id"]))
         try:
-            folder, current = self.execute(json.loads(row["payload"]))
+            folder, current = self.execute(json.loads(row["payload"]), mode=mode)
             with self.state.db:
                 self.state.db.execute("UPDATE jobs SET status=?,report=?,error=NULL,updated=? WHERE id=?",
                                       ("done" if current else "obsolete", folder, now(), row["id"]))

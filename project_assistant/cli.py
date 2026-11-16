@@ -123,6 +123,8 @@ def main(argv=None):
     review = commands.add_parser("review").add_subparsers(dest="action", required=True)
     once = review.add_parser("run")
     once.add_argument("--pr", type=int, required=True)
+    once.add_argument("--mode", choices=["auto", "deep"], default="auto",
+                      help="auto：可快速时跳过 head 语义分析；deep：强制完整语义知识")
     replay = review.add_parser("replay")
     replay.add_argument("--branch", required=True)
     replay.add_argument("--commit", required=True)
@@ -241,7 +243,7 @@ def main(argv=None):
                             result = {"report": row["report"], "reused": True}
                         else:
                             # Explicit run selects this PR, not a different queued job.
-                            result = reviews.process_one(job["fingerprint"])
+                            result = reviews.process_one(job["fingerprint"], mode=args.mode)
         else:
             features = Features(config)
             if args.action == "design":

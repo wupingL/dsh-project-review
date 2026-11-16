@@ -27,7 +27,7 @@ PR_KEYS = {
 AUTHOR_KEYS = {"login", "name", "html_url"}
 REVIEW_KEYS = {
     "status", "report_dir", "current", "checked_at", "invalidated_at", "reviewed_at",
-    "reviewed_head_sha", "mode", "fingerprint", "findings", "severity",
+    "reviewed_head_sha", "mode", "knowledge_mode", "fingerprint", "findings", "severity",
     "coverage_gaps", "job_status", "job_attempts", "job_error", "job_updated",
 }
 SHOW_KEYS = {"generated_at", "source", "source_error", "pr", "files", "review", "job"}
@@ -175,6 +175,7 @@ class InspectFixture(unittest.TestCase):
                    "coverage_gap": "仅获取平台聚合状态。"},
             "backend": {"provider": "fixture"},
             "mode": mode,
+            "knowledge_mode": "deep",
         }
         if metadata_extra:
             metadata.update(metadata_extra)
@@ -453,6 +454,7 @@ class ShowTests(InspectFixture):
         self.assertEqual(review["reviewed_at"], "2026-01-03T00:00:00+00:00")
         self.assertEqual(review["reviewed_head_sha"], "head-301")
         self.assertEqual(review["mode"], "live-pr")
+        self.assertEqual(review["knowledge_mode"], "deep")
         self.assertEqual(review["fingerprint"], "meta-fp-301")
         self.assertEqual(review["metadata"]["changed_files"], ["training/a.py", "cust_op/b.cpp"])
         self.assertEqual(review["intent"], "意图 301")

@@ -177,7 +177,9 @@ elif args[:1] == ['model'] and 'set' in args:
           "secrets_policy": "no secrets"})
 elif args[:1] == ['review'] and 'run' in args:
     number = args[args.index('--pr') + 1] if '--pr' in args else '0'
+    mode = args[args.index('--mode') + 1] if '--mode' in args else 'missing'
     print("pr #%s：获取 PR 提交" % number, file=sys.stderr, flush=True)
+    print("mode=%s" % mode, file=sys.stderr, flush=True)
     time.sleep(0.05)
     print("pr #%s：调用模型执行系统级审查" % number, file=sys.stderr, flush=True)
     emit({"job": "fp123", "report": "state/reports/%s/fp123" % number, "current": True})
@@ -214,7 +216,7 @@ elif 'show' in args:
           "review": {"status": "current", "report_dir": "r", "current": True,
                      "checked_at": "2026-11-07T00:00:00+00:00", "invalidated_at": None,
                      "reviewed_at": "2026-11-06T00:00:00+00:00", "reviewed_head_sha": "h",
-                     "mode": "live-pr", "fingerprint": "fp",
+                     "mode": "live-pr", "knowledge_mode": "fast", "fingerprint": "fp",
                      "findings": [{"title": "日志级别默认值改变", "severity": "high",
                                    "trigger": "未设置 HATA_LOG_LEVEL", "system_function": "日志",
                                    "consequence": "INFO 日志消失", "confidence": "high",
@@ -458,6 +460,8 @@ async function main() {
     check('GET /pulls/432?project 200', detail.status === 200
       && detail.body && Array.isArray(detail.body.review.findings) && detail.body.review.findings.length === 1);
     check('详情含证据行号', detail.body.review.findings[0].evidence[0].line === 12);
+    check('详情暴露审查知识模式', detail.body.review.knowledge_mode === 'fast',
+      detail.body && JSON.stringify(detail.body.review.knowledge_mode));
 
     // 点击未审查 PR 触发审查：启动后台任务并收集进度
     const startedReview = await callRoute(routes, '/recsdk-review/api/pulls/432/review', 'POST',
@@ -474,6 +478,35 @@ async function main() {
       && reviewJob.result && reviewJob.result.current === true));
     check('审查任务收集到进度行', Boolean(reviewJob && Array.isArray(reviewJob.progress)
       && reviewJob.progress.some((line) => line.indexOf('审查') >= 0)), reviewJob && JSON.stringify(reviewJob.progress));
+    check('自动审查传 --mode auto', Boolean(reviewJob && Array.isArray(reviewJob.progress)
+      && reviewJob.progress.some((line) => line.indexOf('mode=auto') >= 0)),
+      reviewJob && JSON.stringify(reviewJob.progress));
+
+    const deepReview = await callRoute(routes, '/recsdk-review/api/pulls/432/review', 'POST',
+      { project: 'recsdk', mode: 'deep' });
+    let deepJob = null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const polled = await callRoute(routes, '/recsdk-review/api/jobs/' + deepReview.body.job_id);
+      deepJob = polled.body;
+      if (deepJob && deepJob.status !== 'running') break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    check('深度审查传 --mode deep', Boolean(deepJob && Array.isArray(deepJob.progress)
+      && deepJob.progress.some((line) => line.indexOf('mode=deep') >= 0)),
+      deepJob && JSON.stringify(deepJob.progress));
+
+    const oddReview = await callRoute(routes, '/recsdk-review/api/pulls/432/review', 'POST',
+      { project: 'recsdk', mode: 'bogus' });
+    let oddJob = null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const polled = await callRoute(routes, '/recsdk-review/api/jobs/' + oddReview.body.job_id);
+      oddJob = polled.body;
+      if (oddJob && oddJob.status !== 'running') break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    check('未知审查模式回退 auto', Boolean(oddJob && Array.isArray(oddJob.progress)
+      && oddJob.progress.some((line) => line.indexOf('mode=auto') >= 0)),
+      oddJob && JSON.stringify(oddJob.progress));
 
     const badReview = await callRoute(routes, '/recsdk-review/api/pulls/0/review', 'POST', { project: 'recsdk' });
     check('拒绝非法编号的审查请求', Boolean(badReview.body && badReview.body.ok === false

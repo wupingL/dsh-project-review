@@ -273,6 +273,7 @@ const NULL_REVIEW = {
   reviewed_at: null,
   reviewed_head_sha: null,
   mode: null,
+  knowledge_mode: null,
   fingerprint: null,
   findings: 0,
   severity: { critical: 0, high: 0, medium: 0, low: 0 },
@@ -701,37 +702,47 @@ function createHostBridge(ctx) {  function service(key) {
     if (!messages.length) throw new Error('请求没有可发送的消息');
     const options = { provider, model, messages };
     if (systems.length) options.system = systems.join('\n\n');
-    // 控制器按 task_profile 请求的输出上限偏保守（知识域 JSON 容易超限），
-    // 宿主侧统一留出余量；上限仍交给提供方裁决。
+    // 控制器按 task_profile 请求的输出上限偏保守（知识域/审查 JSON 容易超限）；
+    // 推理型模型会把预算先花在思考上，输出上限过低时最终内容为空，见下面的翻倍重试。
     const requestedLimit = Number.isFinite(request.max_tokens)
       ? request.max_tokens
       : (Number.isFinite(request.max_completion_tokens) ? request.max_completion_tokens : 0);
-    if (requestedLimit > 0) {
-      options.maxTokens = Math.min(65536, Math.max(requestedLimit, 16384));
-    } else if (Number.isFinite(request.max_completion_tokens)) {
-      options.maxTokens = Math.min(65536, Math.max(request.max_completion_tokens, 16384));
-    }
+    let maxTokens = requestedLimit > 0 ? Math.min(65536, Math.max(requestedLimit, 16384)) : 0;
+    if (maxTokens) options.maxTokens = maxTokens;
     if (Number.isFinite(request.temperature)) options.temperature = request.temperature;
-    let text = '';
-    let finish = 'stop';
-    let usage = null;
-    const stream = llm.stream(options);
-    for await (const chunk of stream) {
-      if (!chunk || typeof chunk !== 'object') continue;
-      if (chunk.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text;
-      else if (chunk.type === 'usage' && chunk.usage) usage = chunk.usage;
-      else if (chunk.type === 'finish' && chunk.reason) {
-        finish = chunk.reason.kind === 'max-tokens' ? 'length'
-          : chunk.reason.kind === 'stop' ? 'stop'
-            : chunk.reason.kind === 'tool-calls' ? 'tool_calls' : chunk.reason.kind;
-        if (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted') {
-          const failure = chunk.reason.failure && chunk.reason.failure.message
-            ? chunk.reason.failure.message
-            : chunk.reason.kind;
-          throw new Error(`Harness 模型调用失败：${failure}`);
+    // 输出预算不足（推理烧光预算）时模型会返回空内容；此时把上限翻倍重试一次。
+    const streamOnce = async (limit) => {
+      let text = '';
+      let finish = 'stop';
+      let usage = null;
+      const attemptOptions = limit ? { ...options, maxTokens: limit } : options;
+      for await (const chunk of llm.stream(attemptOptions)) {
+        if (!chunk || typeof chunk !== 'object') continue;
+        if (chunk.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text;
+        else if (chunk.type === 'usage' && chunk.usage) usage = chunk.usage;
+        else if (chunk.type === 'finish' && chunk.reason) {
+          finish = chunk.reason.kind === 'max-tokens' ? 'length'
+            : chunk.reason.kind === 'stop' ? 'stop'
+              : chunk.reason.kind === 'tool-calls' ? 'tool_calls' : chunk.reason.kind;
+          if (chunk.reason.kind === 'error' || chunk.reason.kind === 'aborted') {
+            const failure = chunk.reason.failure && chunk.reason.failure.message
+              ? chunk.reason.failure.message
+              : chunk.reason.kind;
+            throw new Error(`Harness 模型调用失败：${failure}`);
+          }
         }
       }
+      return { text, finish, usage };
+    };
+    let result = await streamOnce(maxTokens);
+    // 空内容或触顶（finish=length）都说明输出预算不足：翻倍重试，直到 65536。
+    while ((!result.text.trim() || result.finish === 'length') && maxTokens && maxTokens < 65536) {
+      maxTokens = Math.min(65536, maxTokens * 2);
+      result = await streamOnce(maxTokens);
     }
+    const text = result.text;
+    const finish = result.finish;
+    const usage = result.usage;
     if (!text.trim()) throw new Error('Harness 模型返回了空内容');
     // 控制器要求纯 JSON 对象；模型偶尔会加代码围栏或前后解释，这里做一次清洗。
     const wantsJson = request.response_format
@@ -927,12 +938,14 @@ function createService(options, hostBridge, modelBridge) {
   }
 
   /** 为一个 PR 启动真实审查（后台任务，stderr 进度行会被收集）。 */
-  function startReview(projectId, number) {
+  function startReview(projectId, number, mode) {
     const numeric = Number(number);
     if (!Number.isInteger(numeric) || numeric <= 0) throw new Error('非法的 PR 编号');
     const args = [];
     if (projectId) args.push('--project', String(projectId));
     args.push('review', 'run', '--pr', String(numeric));
+    // auto：变更文件未被源码索引时跳过 head 语义分析；deep：强制完整语义知识。
+    args.push('--mode', mode === 'deep' ? 'deep' : 'auto');
     const job = runCliJob(options, args, Math.max(options.reviewTimeoutMs, 60000), { RECSDK_PROGRESS: '1' });
     job.kind = 'review';
     job.number = numeric;
@@ -1225,7 +1238,7 @@ function createRouteHandler(options, service) {
       if (reviewMatch && method === 'POST') {
         try {
           const payload = await readJsonBody(req);
-          const job = service.startReview(payload.project || projectId, Number(reviewMatch[1]));
+          const job = service.startReview(payload.project || projectId, Number(reviewMatch[1]), payload.mode);
           json(res, 202, { ok: true, job_id: job.job_id });
         } catch (error) {
           json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });

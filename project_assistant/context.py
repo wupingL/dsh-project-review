@@ -39,15 +39,47 @@ class Context:
         pointer = read_json(self.config.repo_state / "refs.json", {}).get(ref, {})
         return pointer.get("semantic" if semantic else "structural")
 
-    def sync(self, ref, *, fetch=False, semantic=True, publish=True):
+    def sync(self, ref, *, fetch=False, semantic=True, publish=True, prior=None):
+        """Build or reuse the immutable snapshot for one commit.
+
+        ``prior`` pins the incremental baseline explicitly (a snapshot id). Reviews use
+        it so a cheap structural probe of the head commit cannot shadow the base
+        snapshot that carries the reusable semantic domains.
+        """
         state = State(self.config.repo_state / "state.sqlite")
         try:
             with state.lock("knowledge"):
-                return self._sync(ref, fetch=fetch, semantic=semantic, publish=publish)
+                return self._sync(ref, fetch=fetch, semantic=semantic, publish=publish, prior=prior)
         finally:
             state.close()
 
-    def _sync(self, ref, *, fetch, semantic, publish):
+    def coverage(self, snapshot, paths=()):
+        """Return path -> parser coverage for a snapshot ('structural' when indexed)."""
+        inventory = read_json(self.snapshots / snapshot / "files.json", {})
+        return {path: (inventory.get(path) or {}).get("coverage", "absent-or-unindexed") for path in paths}
+
+    def _choose_prior(self, ref, sha, semantic):
+        prior_id = self.latest(ref, semantic) if ref in self.config.get("branches") else None
+        if not prior_id:
+            candidates = []
+            for manifest_path in self.snapshots.glob("*/manifest.json"):
+                cached = read_json(manifest_path, {})
+                if (cached.get("analyzer") == ANALYZER and cached.get("policy") == self.config.policy
+                        and cached.get("mode") == ("semantic" if semantic else "structural")
+                        and cached.get("status") == "complete"):
+                    distance = int(self.git.command("rev-list", "--count", cached["commit"] + "..." + sha).strip())
+                    candidates.append((distance, cached["snapshot_id"]))
+            if candidates:
+                prior_id = min(candidates)[1]
+        if not prior_id:
+            # Candidate snapshots reuse a base branch's immutable parser cache.
+            for branch in self.config.get("branches"):
+                prior_id = self.latest(branch, semantic) or self.latest(branch, False)
+                if prior_id:
+                    break
+        return prior_id
+
+    def _sync(self, ref, *, fetch, semantic, publish, prior=None):
         self.git.initialize()
         if fetch:
             self.git.refresh()
@@ -59,23 +91,7 @@ class Context:
             if publish and ref in self.config.get("branches"):
                 self._point(ref, flavor, sid)
             return sid
-        prior_id = self.latest(ref, semantic) if ref in self.config.get("branches") else None
-        if not prior_id:
-            candidates = []
-            for manifest_path in self.snapshots.glob("*/manifest.json"):
-                cached = read_json(manifest_path, {})
-                if (cached.get("analyzer") == ANALYZER and cached.get("policy") == self.config.policy
-                        and cached.get("mode") == flavor and cached.get("status") == "complete"):
-                    distance = int(self.git.command("rev-list", "--count", cached["commit"] + "..." + sha).strip())
-                    candidates.append((distance, cached["snapshot_id"]))
-            if candidates:
-                prior_id = min(candidates)[1]
-        if not prior_id:
-            # Candidate snapshots reuse a base branch's immutable parser cache.
-            for branch in self.config.get("branches"):
-                prior_id = self.latest(branch, semantic) or self.latest(branch, False)
-                if prior_id:
-                    break
+        prior_id = prior or self._choose_prior(ref, sha, semantic)
         old = self.snapshots / prior_id if prior_id else None
         previous = read_json(old / "files.json", {}) if old else {}
         old_manifest = read_json(old / "manifest.json", {}) if old else {}

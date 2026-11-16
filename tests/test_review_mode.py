@@ -72,7 +72,7 @@ class ReviewModeIntegrationTests(Fixture):
         sha = self.git("rev-parse", "HEAD").strip()
         reviews.git.command("fetch", str(self.repo), "+refs/heads/*:refs/remotes/origin/*")
         job = reviews.job(self.pr(sha=sha))
-        with patch.object(reviews, "check_fresh", return_value=True):
+        with patch.object(reviews, "existing_discussion", return_value=[]), patch.object(reviews, "check_fresh", return_value=True):
             folder, current = reviews.execute(job)
         self.assertTrue(current)
         return Path(folder), read_json(Path(folder) / "review.json")
@@ -104,7 +104,7 @@ class ReviewModeIntegrationTests(Fixture):
         first = self.git("rev-parse", "HEAD").strip()
         reviews.git.command("fetch", str(self.repo), "+refs/heads/*:refs/remotes/origin/*")
         first_job = reviews.job(self.pr(sha=first))
-        with patch.object(reviews, "check_fresh", return_value=True):
+        with patch.object(reviews, "existing_discussion", return_value=[]), patch.object(reviews, "check_fresh", return_value=True):
             first_folder, _ = reviews.execute(first_job)
         self.assertFalse((Path(first_folder) / "comparison.json").exists())
 
@@ -113,7 +113,7 @@ class ReviewModeIntegrationTests(Fixture):
         second = self.git("rev-parse", "HEAD").strip()
         reviews.git.command("fetch", str(self.repo), "+refs/heads/*:refs/remotes/origin/*")
         second_job = reviews.job(self.pr(sha=second))
-        with patch.object(reviews, "check_fresh", return_value=True):
+        with patch.object(reviews, "existing_discussion", return_value=[]), patch.object(reviews, "check_fresh", return_value=True):
             second_folder, _ = reviews.execute(second_job)
 
         comparison = read_json(Path(second_folder) / "comparison.json")
@@ -124,6 +124,31 @@ class ReviewModeIntegrationTests(Fixture):
         metadata = read_json(Path(second_folder) / "review.json")["metadata"]
         self.assertEqual(metadata["previous_head_sha"], first)
         self.assertIn("与上一版审查的对比", (Path(second_folder) / "review.md").read_text(encoding="utf-8"))
+
+    def test_existing_comments_are_checked_and_deduplicated(self):
+        reviews = Reviews(self.config, model=self.model)
+        self.addCleanup(reviews.state.close)
+        reviews.git.initialize()
+        self.git("checkout", "-b", "feature")
+        (self.repo / "alpha/a.py").write_text("def compute():\n    return 12\n", encoding="utf-8")
+        self.commit("candidate")
+        sha = self.git("rev-parse", "HEAD").strip()
+        reviews.git.command("fetch", str(self.repo), "+refs/heads/*:refs/remotes/origin/*")
+        job = reviews.job(self.pr(sha=sha))
+        discussion = [{"id": "c1", "author": "alice", "body": "这里缺少校验", "line": 1,
+                       "path": "alpha/a.py", "resolved": False, "comment_type": "diff_comment"}]
+        with patch.object(reviews, "existing_discussion", return_value=discussion), \
+                patch.object(reviews, "check_fresh", return_value=True):
+            folder, _ = reviews.execute(job)
+
+        result = read_json(Path(folder) / "review.json")["review"]
+        self.assertEqual([check["comment_id"] for check in result["existing_comment_checks"]], ["c1"])
+        self.assertEqual(result["existing_comment_checks"][0]["status"], "still_open")
+        self.assertEqual(result["findings"][0]["existing_comment"]["author"], "alice")
+        self.assertIn("已有评论的处理情况",
+                      (Path(folder) / "review.md").read_text(encoding="utf-8"))
+        metadata = read_json(Path(folder) / "review.json")["metadata"]
+        self.assertEqual(metadata["existing_comment_count"], 1)
 
     def test_process_one_forwards_explicit_mode(self):
         reviews = Reviews(self.config, model=self.model)

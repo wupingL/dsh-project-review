@@ -89,6 +89,20 @@ class GitCode:
     def pull(self, number):
         return self.get(f"/pulls/{int(number)}")
 
+    def comments(self, number):
+        """PR 已有评论（含行内评论与其 resolved 状态），用于重复/处理判断。"""
+        rows = []
+        page = 1
+        while True:
+            batch = self.get(f"/pulls/{int(number)}/comments", page=page, per_page=100)
+            if not isinstance(batch, list):
+                raise RuntimeError("Unexpected GitCode PR comments response")
+            rows.extend(item for item in batch if isinstance(item, dict))
+            if len(batch) < 100:
+                break
+            page += 1
+        return rows
+
     @staticmethod
     def active(pr):
         return pr.get("state") in {"open", "opened"} and not pr.get("draft", False)

@@ -1,4 +1,4 @@
-﻿# RecSDK 代码检视（DSH 插件 bundle）
+# RecSDK 代码检视（DSH 插件 bundle）
 
 把 `project-assistant` 接入 DeepSeek Harness Web UI：侧栏「代码检视」整页。页面是一个项目控制台：
 
@@ -172,6 +172,18 @@ POST /recsdk-review/api/pulls/<number>/comments
 ```
 
 > 自动化测试与开发调试都只走 dry-run / 假传输层；不会对 RecSDK 等真实仓库提交评论。
+
+### 与 PR 已有评论的去重 / 处理判断
+
+PR 上常已有人工或其他工具的评论，审查与评论都会考虑：
+
+- **审查阶段**：读取 `GET /pulls/:number/comments`，在提示中要求模型（1）不要重复报告已有评论指出的问题，
+  （2）对每条已有评论给出处理状态 `addressed` / `still_open` / `unclear`。报告写入
+  `existing_comment_checks` 并生成「已有评论的处理情况」章节，页面同样展示。
+  模型漏答时按平台 `resolved` 标记降级（`resolved=true` → 已处理，否则 无法确认）。
+- **重复标注**：与「未解决」已有评论重复（同文件同行 ±3，或标题与评论正文关键词高度重合）的意见，
+  会在卡片上标注「已有相同评论」，默认不参与勾选提交。
+- **提交阶段**：真正提交前再查一次已有评论；重复的默认跳过并在结果里给出说明（`--force` 可强制重复提交）。
 
 ## 本地路径（代码镜像 / 知识库）
 

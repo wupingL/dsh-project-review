@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -45,6 +46,82 @@ def parse_id(value):
 def _clip(value, limit):
     text = str(value or "").strip()
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _normalized_text(value):
+    return re.sub(r"[\s`*_：:，,。.、/\\()（）\[\]-]+", "", str(value or "")).lower()
+
+
+def _tokens(value):
+    text = str(value or "").lower()
+    words = set(re.findall(r"[a-z0-9_]+", text))
+    for run in re.findall(r"[\u4e00-\u9fff]+", text):
+        words.update(run[i:i + 2] for i in range(len(run) - 1))
+    return words
+
+
+def normalize_comments(rows):
+    """把平台评论统一成 {id, author, body, path, line, resolved, comment_type} 结构。"""
+    result = []
+    for raw in rows if isinstance(rows, list) else []:
+        if not isinstance(raw, dict):
+            continue
+        body = str(raw.get("body") or raw.get("content") or "").strip()
+        user = raw.get("user") if isinstance(raw.get("user"), dict) else {}
+        diff_position = raw.get("diff_position") if isinstance(raw.get("diff_position"), dict) else {}
+        line = None
+        for key in ("start_new_line", "end_new_line", "new_line"):
+            if isinstance(diff_position.get(key), int):
+                line = diff_position[key]
+                break
+        if line is None and isinstance(raw.get("position"), int):
+            line = raw["position"]
+        result.append({
+            "id": raw.get("id") if raw.get("id") is not None else raw.get("discussion_id"),
+            "discussion_id": raw.get("discussion_id"),
+            "author": str(user.get("login") or user.get("name") or ""),
+            "body": body,
+            "path": raw.get("path") if isinstance(raw.get("path"), str) else None,
+            "line": line,
+            "resolved": raw.get("resolved") is True,
+            "comment_type": str(raw.get("comment_type") or ""),
+            "created_at": raw.get("created_at"),
+        })
+    return result
+
+
+def find_overlapping_comment(finding, comments, window=3):
+    """判断审查意见是否与已有评论重复：同文件同行（±window）优先，其次标题关键词重合。"""
+    comments = comments if isinstance(comments, list) else []
+    if not comments:
+        return None
+    evidence = _evidence(finding) or {}
+    path, line = evidence.get("path"), evidence.get("line") or 0
+    for comment in comments:
+        comment_line = comment.get("line")
+        if isinstance(comment_line, int) and isinstance(line, int) and line > 0:
+            if abs(comment_line - line) <= window:
+                if comment.get("path") and path:
+                    if comment["path"] != path:
+                        continue
+                return comment
+    title = str(finding.get("title") or "")
+    title_key = _normalized_text(title)
+    if len(title_key) < 4:
+        return None
+    title_tokens = _tokens(title)
+    for comment in comments:
+        body_key = _normalized_text(comment.get("body"))
+        if not body_key:
+            continue
+        if title_key in body_key or title_key[:20] in body_key:
+            return comment
+        body_tokens = _tokens(comment.get("body"))
+        if title_tokens and body_tokens:
+            shared = title_tokens & body_tokens
+            if len(shared) >= 3 and len(shared) / len(title_tokens) >= 0.5:
+                return comment
+    return None
 
 
 def _evidence(finding):
@@ -204,6 +281,15 @@ def _added_lines(config, pr, head_sha):
         return None, None
 
 
+def _fetch_existing_comments(api, number):
+    """读取 PR 已有评论；失败不影响提交，只记录说明。"""
+    try:
+        rows = api.comments(int(number))
+        return normalize_comments(rows), None
+    except Exception as exc:  # noqa: BLE001 - 平台不可用时降级
+        return [], f"无法读取 PR 已有评论（{exc}）；未做重复检查"
+
+
 def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, force=False,
                   api=None, git=None, report=None, delay=0.6):
     """预览或提交审查意见评论。
@@ -263,8 +349,31 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
     if not plans:
         raise ValueError("没有可提交的评论：" + "；".join(notes))
 
+    # PR 常已有他人评论：与「未解决」评论重复的意见默认不再提交，避免刷屏。
+    existing, existing_note = _fetch_existing_comments(api, number)
+    if existing_note:
+        notes.append(existing_note)
+    kept = []
+    skipped_existing = []
+    for plan in plans:
+        match = find_overlapping_comment(
+            {"title": plan["title"], "evidence": [{"path": plan["path"], "line": plan["line"]}]}, existing)
+        if match and not match.get("resolved") and not force:
+            note_author = match.get("author") or "其他人"
+            notes.append(f"{plan['finding']} 与 {note_author} 的已有评论重复，已跳过")
+            skipped_existing.append(plan["finding"])
+            continue
+        if match:
+            plan["existing_comment"] = {key: match.get(key) for key in ("id", "author", "line", "resolved")}
+        kept.append(plan)
+    if not kept:
+        raise ValueError("所选意见在 PR 已有未解决评论，已全部跳过（如需重复提交请加 --force）")
+    plans = kept
+
     result = {"ok": True, "dry_run": dry_run, "head_sha": head_sha, "mode": mode,
-              "items": [], "posted": 0, "failed": 0, "skipped": skipped, "notes": notes}
+              "items": [], "posted": 0, "failed": 0, "skipped": skipped,
+              "skipped_existing": skipped_existing, "notes": notes,
+              "existing_comment_count": len(existing)}
     if dry_run:
         result["items"] = [{**plan, "status": "preview"} for plan in plans]
         return result
@@ -277,6 +386,8 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
         if index:
             time.sleep(max(0.0, delay))
         entry = {k: plan[k] for k in ("finding", "title", "severity", "path", "line", "position", "inline", "body")}
+        if plan.get("existing_comment"):
+            entry["existing_comment"] = plan["existing_comment"]
         entry["mode"] = mode
         entry["at"] = now()
         try:

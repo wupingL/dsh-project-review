@@ -33,10 +33,10 @@ REVIEW_KEYS = {
 SHOW_KEYS = {"generated_at", "source", "source_error", "pr", "files", "review", "job"}
 SHOW_REVIEW_KEYS = REVIEW_KEYS | {
     "metadata", "intent", "summary", "risks_to_verify", "affected_flows",
-    "verification_plan", "comparison", "posted_comments", "stale_message",
+    "verification_plan", "comparison", "posted_comments", "existing_comment_checks", "stale_message",
 }
 FINDING_KEYS = {"title", "severity", "trigger", "system_function", "consequence",
-                "evidence", "verification", "confidence"}
+                "evidence", "verification", "confidence", "existing_comment"}
 EVIDENCE_KEYS = {"path", "line", "reason"}
 JOB_KEYS = {"status", "attempts", "error", "updated"}
 
@@ -480,6 +480,8 @@ class ShowTests(InspectFixture):
         self.assertEqual(review["comparison"]["fixed"][0]["status"], "fixed")
         self.assertEqual([item["finding"] for item in review["posted_comments"]], ["F1"])
         self.assertTrue(review["posted_comments"][0]["inline"])
+        self.assertEqual(review["existing_comment_checks"], [])
+        self.assertIsNone(review["findings"][0].get("existing_comment"))
         self.assertEqual(review["fingerprint"], "meta-fp-301")
         self.assertEqual(review["metadata"]["changed_files"], ["training/a.py", "cust_op/b.cpp"])
         self.assertEqual(review["intent"], "意图 301")

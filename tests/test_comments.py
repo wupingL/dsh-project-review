@@ -6,9 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from project_assistant.comments import (build_comment, finding_id, parse_id, plan_comments,
-                                       post_findings, posted_comments, resolve_anchor)
+from project_assistant.comments import (build_comment, find_overlapping_comment, finding_id,
+                                       normalize_comments, parse_id, plan_comments, post_findings,
+                                       posted_comments, resolve_anchor)
 from project_assistant.common import Config, atomic_json, run
+from project_assistant.gitcode import GitCode
 
 HEAD = "a" * 40
 BASE = "b" * 40
@@ -26,13 +28,17 @@ def findings():
 
 
 class FakeApi:
-    def __init__(self, pr, inline_ok=True):
+    def __init__(self, pr, inline_ok=True, comments=None):
         self.pr = pr
         self.calls = []
         self.inline_ok = inline_ok
+        self.comment_rows = comments if comments is not None else []
 
     def pull(self, number):
         return self.pr
+
+    def comments(self, number):
+        return list(self.comment_rows)
 
     def post(self, path, payload):
         self.calls.append((path, payload))
@@ -188,6 +194,77 @@ class PostFindingsTests(unittest.TestCase):
                               report=self.report(), dry_run=False, delay=0)
         self.assertIn("GITCODE_TOKEN", str(caught.exception))
         self.assertEqual(api.calls, [])
+
+    def test_unresolved_existing_comment_skips_duplicate(self):
+        existing = [{"id": "c1", "body": "这里缺少 1/sqrt 缩放", "user": {"login": "alice"},
+                     "resolved": False, "comment_type": "diff_comment",
+                     "diff_position": {"start_new_line": 12, "end_new_line": 12}}]
+        api = FakeApi(self.pr, comments=existing)
+        result = self.run_post(api, FakeGit({"src/a.py": {12}}), self.report(), ["F1", "F2"], dry_run=False)
+        self.assertEqual([item["finding"] for item in result["items"]], ["F2"])
+        self.assertEqual(result["skipped_existing"], ["F1"])
+        self.assertTrue(any("已有评论重复" in note for note in result["notes"]))
+
+    def test_resolved_existing_comment_does_not_block_posting(self):
+        existing = [{"id": "c1", "body": "这里缺少 1/sqrt 缩放", "user": {"login": "alice"},
+                     "resolved": True, "comment_type": "diff_comment",
+                     "diff_position": {"start_new_line": 12, "end_new_line": 12}}]
+        api = FakeApi(self.pr, comments=existing)
+        result = self.run_post(api, FakeGit({"src/a.py": {12}}), self.report(), ["F1"], dry_run=False)
+        self.assertEqual(result["posted"], 1)
+        self.assertEqual(result["existing_comment_count"], 1)
+        self.assertEqual(result["items"][0]["existing_comment"]["id"], "c1")
+
+    def test_all_duplicates_raise(self):
+        existing = [{"id": "c1", "body": "这里缺少缩放", "user": {"login": "alice"},
+                     "resolved": False, "comment_type": "diff_comment",
+                     "diff_position": {"start_new_line": 12, "end_new_line": 12}}]
+        with self.assertRaises(ValueError) as caught:
+            self.run_post(FakeApi(self.pr, comments=existing), FakeGit({"src/a.py": {12}}),
+                          self.report(), ["F1"], dry_run=False)
+        self.assertIn("已全部跳过", str(caught.exception))
+
+
+class ExistingCommentTests(unittest.TestCase):
+    def test_normalize_comment_fields(self):
+        rows = [{"id": 7, "body": "请补缩放", "user": {"login": "alice"},
+                 "resolved": True, "comment_type": "diff_comment", "path": "src/a.py",
+                 "diff_position": {"start_new_line": 12, "end_new_line": 12}}]
+        comments = normalize_comments(rows)
+        self.assertEqual(comments[0]["author"], "alice")
+        self.assertEqual(comments[0]["line"], 12)
+        self.assertTrue(comments[0]["resolved"])
+        self.assertEqual(comments[0]["path"], "src/a.py")
+
+    def test_overlap_by_line_then_by_title(self):
+        line_comment = {"id": "c1", "body": "这里不对", "line": 12,
+                        "path": "src/a.py", "resolved": False}
+        self.assertIs(find_overlapping_comment(findings()[0], [line_comment]), line_comment)
+        far = {"id": "c2", "body": "其他", "line": 90, "path": "src/a.py", "resolved": False}
+        self.assertIsNone(find_overlapping_comment(findings()[0], [far]))
+        title_comment = {"id": "c3", "body": "反向缩放缺失：请确认 1/sqrt(attention_dim) 的传递",
+                         "line": None, "path": None, "resolved": False}
+        self.assertIs(find_overlapping_comment(findings()[0], [title_comment]), title_comment)
+
+
+class CommentApiTests(unittest.TestCase):
+    def test_comments_are_paginated(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        atomic_json(root / "config.json", {"name": "demo", "repo_url": "https://gitcode.com/demo/repo",
+                                           "branches": ["main"], "state_dir": "state"})
+        config = Config(root / "config.json")
+
+        def transport(path, params):
+            page = int(params.get("page", 1))
+            if page == 1:
+                return [{"id": page * 100 + index, "body": "x"} for index in range(100)]
+            return [{"id": 5, "body": "last"}]
+
+        rows = GitCode(config, transport=transport).comments(440)
+        self.assertEqual(len(rows), 101)
+        self.assertEqual(rows[-1]["id"], 5)
 
 
 class AddedLineTests(unittest.TestCase):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,6 +43,12 @@ class FakeModel:
                                     "verification": "验证"}],
                       "risks_to_verify": [], "coverage_gaps": [], "affected_flows": ["入口→计算"],
                       "verification_plan": ["需要实测"]}
+            if "PR 已有评论" in prompt:
+                block = prompt.split("PR 已有评论", 1)[1].split("要求：", 1)[0]
+                ids = list(dict.fromkeys(re.findall(r'"id":\s*"([^"]+)"', block)))
+                result["existing_comment_checks"] = [
+                    {"comment_id": cid, "status": "still_open" if index == 0 else "addressed",
+                     "reason": "测试复核"} for index, cid in enumerate(ids)]
             if "上一版结论：" in prompt:
                 previous = json.loads(prompt.rsplit("上一版结论：", 1)[1].splitlines()[0])
                 result["previous_findings_status"] = [
@@ -250,7 +257,8 @@ class PollTests(Fixture):
         sha = self.git("rev-parse", "HEAD").strip()
         reviews.git.command("fetch", str(self.repo), "+refs/heads/*:refs/remotes/origin/*")
         job = reviews.job(self.pr(sha=sha))
-        with patch.object(reviews, "check_fresh", return_value=False):
+        with patch.object(reviews, "existing_discussion", return_value=[]), \
+                patch.object(reviews, "check_fresh", return_value=False):
             folder, current = reviews.execute(job)
         self.assertFalse(current)
         result = read_json(Path(folder) / "review.json")

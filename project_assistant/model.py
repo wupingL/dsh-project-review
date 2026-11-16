@@ -280,6 +280,11 @@ PREVIOUS_STATUS_SCHEMA = object_schema({
     "reason": TEXT,
     "evidence": {"type": "array", "items": EVIDENCE},
 })
+EXISTING_COMMENT_CHECK_SCHEMA = object_schema({
+    "comment_id": TEXT,
+    "status": {"type": "string", "enum": ["addressed", "still_open", "unclear"]},
+    "reason": TEXT,
+})
 REVIEW_SCHEMA_WITH_PREVIOUS = {
     "type": "object",
     "properties": {**REVIEW_SCHEMA["properties"],
@@ -287,6 +292,23 @@ REVIEW_SCHEMA_WITH_PREVIOUS = {
     "required": list(REVIEW_SCHEMA["required"]),
     "additionalProperties": False,
 }
+
+
+def review_schema(*, previous=False, discussion=False):
+    """增量审查 / 已有评论复核所需的附加（可选）字段。
+
+    两个字段都不在 required 里：模型漏答时按「无法确认」降级，而不是让整份
+    审查因 Schema 校验失败重来。
+    """
+    properties = dict(REVIEW_SCHEMA["properties"])
+    if previous:
+        properties["previous_findings_status"] = {"type": "array", "items": PREVIOUS_STATUS_SCHEMA}
+    if discussion:
+        properties["existing_comment_checks"] = {"type": "array", "items": EXISTING_COMMENT_CHECK_SCHEMA}
+    if not previous and not discussion:
+        return REVIEW_SCHEMA
+    return {"type": "object", "properties": properties,
+            "required": list(REVIEW_SCHEMA["required"]), "additionalProperties": False}
 FEATURE_SCHEMA = object_schema({"goal": TEXT, "acceptance_criteria": STRINGS,
                                 "proposed_changes": STRINGS, "system_impact": STRINGS,
                                 "verification_plan": STRINGS, "knowledge_updates": STRINGS,

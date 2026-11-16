@@ -519,6 +519,38 @@ def _finding_cards(value):
             "evidence": evidence,
             "verification": _text(finding.get("verification")) or "",
             "confidence": _text(finding.get("confidence")) or "",
+            "existing_comment": _existing_comment(finding.get("existing_comment")),
+        })
+    return result
+
+
+def _existing_comment(value):
+    """该意见与 PR 已有评论重复时的摘要（页面据此提示，默认不重复提交）。"""
+    if not isinstance(value, dict):
+        return None
+    return {
+        "id": _text(value.get("id")),
+        "author": _text(value.get("author")),
+        "line": _int(value.get("line")),
+        "excerpt": _text(value.get("excerpt")),
+    }
+
+
+def _comment_checks(value):
+    """模型对 PR 已有评论的处理判断（已处理 / 仍未处理 / 无法确认）。"""
+    result = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        result.append({
+            "comment_id": _text(item.get("comment_id")),
+            "author": _text(item.get("author")),
+            "line": _int(item.get("line")),
+            "comment_type": _text(item.get("comment_type")),
+            "resolved": item.get("resolved") is True,
+            "excerpt": _text(item.get("excerpt")),
+            "status": _text(item.get("status")),
+            "reason": _text(item.get("reason")),
         })
     return result
 
@@ -549,6 +581,7 @@ def _extended_review(view, report, metadata, review):
         "verification_plan": _strings(review.get("verification_plan")),
         "comparison": _comparison(report),
         "posted_comments": _posted_comments(report),
+        "existing_comment_checks": _comment_checks(review.get("existing_comment_checks")),
         "stale_message": _stale_message(report),
     })
     return value

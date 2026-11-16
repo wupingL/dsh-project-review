@@ -107,6 +107,11 @@ window.__ModuleLoader__.load({
       'comment.resultTitle': '评论提交完成',
       'comment.resultSummary': '成功 {posted} 条，失败 {failed} 条。',
       'comment.failed': '评论提交失败',
+      'comment.existingBadge': '已有相同评论',
+      'discussion.title': '已有评论处理情况',
+      'discussion.addressed': '已处理',
+      'discussion.open': '仍未处理',
+      'discussion.unclear': '无法确认',
       'review.modelRequired': '模型路由未就绪，无法执行审查（请到「模型配置」使用 Harness 模型）',
       'review.emptyHint': '可稍后启动审查；结果生成后会显示在这里。',
       'review.queued': '审查排队中',
@@ -371,6 +376,11 @@ window.__ModuleLoader__.load({
       'comment.resultTitle': 'Comments posted',
       'comment.resultSummary': '{posted} posted, {failed} failed.',
       'comment.failed': 'Posting comments failed',
+      'comment.existingBadge': 'Existing comment',
+      'discussion.title': 'Existing comments',
+      'discussion.addressed': 'Handled',
+      'discussion.open': 'Still open',
+      'discussion.unclear': 'Unclear',
       'review.modelRequired': 'Model route is not ready (open Model route and use the Harness model)',
       'review.emptyHint': 'A review can be started later; results will appear here.',
       'review.queued': 'Review queued',
@@ -2179,7 +2189,7 @@ window.__ModuleLoader__.load({
                   className: 'rr-finding rr-sev-' + group.severity + (posted ? ' rr-finding-posted' : ''),
                 },
                   h('div', { className: 'rr-finding-head' },
-                    canSelect && !posted
+                    canSelect && !posted && !finding.existing_comment
                       ? h('input', {
                           type: 'checkbox',
                           className: 'rr-finding-check',
@@ -2196,6 +2206,12 @@ window.__ModuleLoader__.load({
                       posted
                         ? h('span', { className: 'rr-badge rr-posted-badge' },
                             t('comment.postedBadge') + ' · ' + (posted.inline ? t('comment.inline') : t('comment.general')))
+                        : null,
+                      finding.existing_comment
+                        ? h('span', {
+                            className: 'rr-badge rr-existing-badge',
+                            title: asText(finding.existing_comment.excerpt, ''),
+                          }, t('comment.existingBadge') + ' @' + (asText(finding.existing_comment.author, '') || '?'))
                         : null
                     )
                   ),
@@ -2278,6 +2294,21 @@ window.__ModuleLoader__.load({
               { posted: numberOr(commentResult.posted, 0), failed: numberOr(commentResult.failed, 0) }))) : null
         ) : null,
         h(ComparisonBlock, { comparison: review && review.comparison, t: t }),
+        (Array.isArray(review.existing_comment_checks) && review.existing_comment_checks.length)
+          ? h('div', { className: 'rr-list-block rr-discussion' },
+              h('div', { className: 'rr-list-label' }, t('discussion.title')),
+              h('ul', { className: 'rr-bullets' }, review.existing_comment_checks.map(function (check, index) {
+                const labels = {
+                  addressed: t('discussion.addressed'),
+                  still_open: t('discussion.open'),
+                  unclear: t('discussion.unclear'),
+                };
+                return h('li', { key: index },
+                  '@' + (asText(check.author, '') || t('common.unknown')) + '：' + asText(check.excerpt, ''),
+                  ' → ' + (labels[check.status] || t('discussion.unclear')),
+                  check.reason ? '（' + asText(check.reason, '') + '）' : null);
+              })))
+          : null,
         h(BulletBlock, { title: t('lists.affectedFlows'), items: asLines(review.affected_flows) }),
         h(BulletBlock, { title: t('lists.risksToVerify'), items: asLines(review.risks_to_verify) }),
         h(BulletBlock, { title: t('lists.coverageGaps'), items: asLines(review.coverage_gaps) }),

@@ -15,12 +15,16 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 export const name = 'recsdk-review';
 export const inject = ['tools'];
 
 const ROUTE_PREFIX = '/recsdk-review/api';
-const DEFAULT_PROJECT_ROOT = 'D:\\GRVLLM\\ReviewWork\\project-assistant';
+// 插件目录（harness-plugin/）的上一级就是控制器工程目录；本地目录安装/仓库克隆后
+// 无需再手工填写 projectRoot，只有把控制器放在别处时才需要在 bundle 配置里覆盖。
+const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_PROJECT_ROOT = path.resolve(PLUGIN_DIR, '..');
 const MAX_STDOUT = 8 * 1024 * 1024;
 const MAX_STDERR = 200 * 1024;
 

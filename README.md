@@ -2,7 +2,88 @@
 
 Three reusable project workflow skills share one Python controller and the pinned MIT Understand core. The controller owns isolated Git workspaces, immutable snapshots, a SQLite PR queue and local Chinese reports. It never changes the supplied working clone.
 
-For the next phase, start with [DeepSeek Harness plugin handoff](DEEPSEEK_HANDOFF.md). It records what is implemented and how to build an installable DSH bundle that uses the host's DeepSeek model route. **A first installable DSH bundle now exists in [harness-plugin/](harness-plugin/):** a "代码检视" page in the Harness Web UI that lists the current GitCode PRs and shows each PR's AI review findings, plus three read-only Agent tools (`recsdk_pr_list`, `recsdk_pr_review`, `recsdk_review_health`) and the matching same-origin HTTP routes. It reads the controller's state through the read-only CLI commands `review list` / `review show` ([inspect.py](project_assistant/inspect.py)); running a new review from the page still requires the host-model bridge described in DEEPSEEK_HANDOFF.md §3.2. This README continues to describe the standalone CLI, including its separate direct HTTP adapter. The first Codex/OpenAI run remains documented in [SESSION_HANDOFF.md](SESSION_HANDOFF.md).
+这是**DeepSeek Harness（DSH）代码检视插件**及其依赖的 Python 控制器：在 DSH Web UI 中提供「代码检视」整页视图（PR 列表、AI 审查报告、与上一版对比、多选意见提交评论），并以 Agent 工具（`recsdk_pr_list`、`recsdk_pr_review`、`recsdk_projects`、`recsdk_knowledge_status`、`recsdk_harness_models`、`recsdk_use_harness_model`、`recsdk_review_health`）暴露只读能力。控制器负责 GitCode 读取、知识快照、审查队列与报告；插件只做展示与转发。插件细节见 [harness-plugin/README.md](harness-plugin/README.md)。
+
+## 在 DeepSeek Harness 中安装使用
+
+### 1. 环境要求
+
+| 依赖 | 要求 |
+| --- | --- |
+| Windows | 10/11（脚本按 Windows 路径编写） |
+| Git | 2.40+ |
+| Node.js | 22+（理解图谱构建与插件运行） |
+| pnpm | 9+（安装 pinned 的 Understand 依赖） |
+| Python | 3.11+（控制器只用标准库；`setup.ps1` 会创建 `.venv`） |
+| DeepSeek Harness | 0.2.2+（Web GUI；模型桥要求 Harness 处于运行状态） |
+| 网络 | 首次初始化会克隆两个 pinned 依赖并构建；审查需访问 GitCode |
+
+### 2. 获取并初始化控制器
+
+```powershell
+git clone https://github.com/wupingL/dsh-project-review.git
+cd dsh-project-review
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1
+```
+
+`setup.ps1` 会按 `dependencies.lock.json` 克隆并检出 pinned 的 Understand 与专家技能仓库到 `vendor/`，安装并构建 `@understand-anything/core`，并创建 `.venv`。首次执行需要网络与 pnpm。
+
+### 3. 安装为 DSH 插件
+
+插件以「本地目录 link」方式安装（改代码后刷新页面即生效）。`projectRoot` 默认取 `harness-plugin/` 的上一级，**无需改路径**：
+
+```
+plugin_manager install_bundle target = "<克隆目录绝对路径>\\harness-plugin"
+```
+
+也可以在 DSH 插件管理界面手动选择 `harness-plugin` 目录安装。安装后 DSH Web UI 出现「代码检视」入口。
+
+> 仓库移动位置后需要重新安装（link 指向旧路径）；控制器放在其他目录时，编辑 `harness-plugin/cordis.patch.yml` 的 `projectRoot` / `python`。
+
+### 4. 首次配置
+
+1. **模型**：打开「代码检视」→「模型配置」→ 点「使用 Harness 当前模型（免配置）」。插件会在本机 loopback 起模型桥并把控制器路由指向它，无需 API Key。
+2. **项目**：项目页点「导入项目」，填 GitCode/GitLab HTTPS 仓库地址（可选本地 clone 路径），选择分支。
+3. **凭据**：设置 `GITCODE_TOKEN` 环境变量（读取 PR/评论需要读权限；提交评论需要 `pull_requests` 写权限）。不要写进配置文件。
+4. **知识库**：切换分支后首次会自动构建知识快照（大仓库耗时较长，建议构建完成后再审查）。
+
+### 5. 日常使用
+
+- 「代码检视」页自动拉取最新 PR。未审查 PR 点「开始审查」（自动判断快速/深度）；需要完整语义时点「深度审查」。
+- PR 推送新提交后**自动重审**（默认每 2 分钟检查一次），并与上一版逐条对比：已修复 / 仍存在 / 新增。
+- 审查意见可多选 → 选口径（问题 / 建议 / 疑问）→ 预览 → 确认，提交为 PR 对应代码处的评论；不在 diff 新增行的会退化为 PR 级评论并标注目标位置。
+- 审查会读取 PR 已有评论：不重复报告已提出的问题，并给出「已处理 / 仍未处理 / 无法确认」；同行重复的意见默认不提交。
+
+### 6. 更新
+
+```powershell
+git pull
+```
+
+本地 link 安装刷新 Harness 页面即可（`client.js` 立即生效；Host 半身改动建议在插件管理里禁用再启用）。控制器代码更新无需重装。更新后可用 `scripts\verify_all.ps1` 自检。
+
+### 7. 安全说明
+
+- 评论**默认 dry-run**，只有页面「确认提交」或 CLI `--confirm` 才真正写入 PR。
+- 自动化测试与开发调试只走假传输层，不对真实仓库写评论。
+- `GITCODE_TOKEN` 与模型凭据只从环境/凭据文件读取，不写入配置、日志、报告；评论接口 URL 不回显 token。
+- `data/`（镜像、快照、报告、SQLite、凭据文件）、`vendor/`、`.venv/`、`.harness-bridge-token` 均已 gitignore，不会提交到仓库。
+
+## 仓库维护：发布 / 同步更新
+
+本仓库同时是插件源码仓库（<https://github.com/wupingL/dsh-project-review>）。发布新版本：
+
+```powershell
+# 1) 自检（编译、Host 冒烟、控制器只读命令、模型连通性、已安装 bundle）
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\verify_all.ps1
+
+# 2) 提交并推送
+git add -A
+git commit -m "描述本次改动"
+git push origin main
+```
+
+或运行 `scripts\publish.ps1 -Message "描述本次改动"`（自动提交并推送）。
 
 Model routing is explicit. `model_backend.provider` must be `codex` or `deepseek`; an absent or unknown provider is a configuration error and never silently falls back to OpenAI. Provider, endpoint identity, model and task parameters are stored in project configuration; credentials are read only from the process/user environment or a configured credential file and are never written into snapshots, reports or logs.
 

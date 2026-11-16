@@ -39,6 +39,7 @@ function resolveOptions(config) {
   const syncTimeout = Number(value.syncTimeoutMs);
   const reviewTimeout = Number(value.reviewTimeoutMs);
   const bridgePort = Number(value.bridgePort);
+  const autoPoll = Number(value.autoReviewPollMs);
   return {
     root,
     python,
@@ -47,6 +48,9 @@ function resolveOptions(config) {
     syncTimeoutMs: Number.isFinite(syncTimeout) && syncTimeout > 0 ? syncTimeout : 1800000,
     reviewTimeoutMs: Number.isFinite(reviewTimeout) && reviewTimeout > 0 ? reviewTimeout : 3600000,
     bridgePort: Number.isInteger(bridgePort) && bridgePort > 0 && bridgePort < 65536 ? bridgePort : 55114,
+    // PR head 变化后自动重新审查（只针对已经审查过一次的 PR，不批量审查未审查列表）。
+    autoReviewUpdates: value.autoReviewUpdates !== false,
+    autoReviewPollMs: Number.isFinite(autoPoll) && autoPoll >= 1000 ? autoPoll : 120000,
   };
 }
 
@@ -958,6 +962,67 @@ function createService(options, hostBridge, modelBridge) {
     return job;
   }
 
+  // ---- PR 更新后自动重新审查 ------------------------------------------------
+  // 只针对「已经审查过一次、head 又变了」的 PR；从未审查过的 PR 仍需人工点击，
+  // 避免首次进入页面就把积压的 PR 全部排队。每个项目同时只跑一个审查。
+  const autoReviews = new Map(); // `${projectId}:${number}` -> job
+  const autoAttempts = new Map(); // `${projectId}:${number}` -> last start timestamp
+  const AUTO_RETRY_MS = 10 * 60 * 1000;
+
+  function needsReviewAfterUpdate(pr) {
+    if (!pr || pr.active === false) return false;
+    const review = pr.review && typeof pr.review === 'object' ? pr.review : null;
+    if (!review) return false;
+    const reviewed = typeof review.reviewed_head_sha === 'string' ? review.reviewed_head_sha : '';
+    const head = typeof pr.head_sha === 'string' ? pr.head_sha : '';
+    if (!reviewed) return false;
+    if (review.job_status === 'running' || review.job_status === 'pending') return false;
+    return (head !== '' && reviewed !== head) || review.current === false;
+  }
+
+  async function autoReviewTick() {
+    if (!options.autoReviewUpdates) return { skipped: 'disabled', started: [] };
+    for (const [key, job] of [...autoReviews.entries()]) {
+      if (!job || job.status !== 'running') autoReviews.delete(key);
+    }
+    if (autoReviews.size >= 2) return { skipped: 'busy', started: [] };
+    let list = [];
+    try {
+      const listed = await projects();
+      list = Array.isArray(listed && listed.projects) ? listed.projects : [];
+    } catch {
+      list = [];
+    }
+    const started = [];
+    for (const project of list) {
+      const id = project && project.id ? String(project.id) : null;
+      if (!id) continue;
+      if ([...autoReviews.keys()].some((key) => key.indexOf(id + ':') === 0)) continue;
+      if (autoReviews.size >= 2) break;
+      let pulls = null;
+      try {
+        pulls = await listPulls({ offline: false, refresh: true, projectId: id });
+      } catch {
+        continue;
+      }
+      for (const pr of (pulls && Array.isArray(pulls.prs) ? pulls.prs : [])) {
+        if (!needsReviewAfterUpdate(pr)) continue;
+        const key = id + ':' + pr.number;
+        if (autoReviews.has(key)) continue;
+        const last = autoAttempts.get(key) || 0;
+        if (Date.now() - last < AUTO_RETRY_MS) continue;
+        const job = startReview(id, pr.number, 'auto');
+        job.auto = true;
+        autoReviews.set(key, job);
+        autoAttempts.set(key, Date.now());
+        started.push({ project: id, number: pr.number, job_id: job.job_id });
+        break; // 每个项目同时只跑一个
+      }
+    }
+    if (started.length) memo.clear();
+    return { started };
+  }
+
   async function harnessModels(providerFilter) {
     if (!hostBridge) return { available: false, providers: [], reason: '宿主桥不可用' };
     const data = await hostBridge.harnessModels();
@@ -1078,7 +1143,7 @@ function createService(options, hostBridge, modelBridge) {
     projects, branches, knowledge, probe, importProject, startSync, startReview, job,
     modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
     useHarness, bridgeChat, bridgeModels,
-    listPulls, showPull, health, recoverReviews,
+    listPulls, showPull, health, recoverReviews, autoReviewTick,
   };
 }
 
@@ -1474,6 +1539,21 @@ export function apply(ctx, config) {
     })().catch(() => {});
     return () => {};
   }, 'recsdk-review: recover interrupted reviews');
+
+  // PR 有新提交时自动重新审查（只针对已审查过的 PR，串行执行，避免长时间占满）。
+  ctx.effect(() => {
+    const tick = () => {
+      service.autoReviewTick().catch(() => {});
+    };
+    const timer = setInterval(tick, options.autoReviewPollMs);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    const warmup = setTimeout(tick, 5000);
+    if (warmup && typeof warmup.unref === 'function') warmup.unref();
+    return () => {
+      clearInterval(timer);
+      clearTimeout(warmup);
+    };
+  }, 'recsdk-review: auto review updates');
 
   // 同源 HTTP 路由：只在 Web 组合里注册。
   // 用 ctx.inject 而不是 apply 时的 ctx.get：插件先于 webServer 发布加载，

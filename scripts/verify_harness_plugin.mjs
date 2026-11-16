@@ -195,7 +195,7 @@ elif 'list' in args:
                    "id": "Ascend/RecSDK_for_lingqu", "state_dir": "state"},
           "branches": ["develop"], "source": "cache" if "--offline" in args else "live",
           "source_error": None,
-          "counts": {"total": 1, "open": 1, "reviewed": 0, "stale": 0, "pending": 0, "failed": 0},
+          "counts": {"total": 2, "open": 2, "reviewed": 0, "stale": 0, "pending": 0, "failed": 0},
           "prs": [{"number": 432, "title": "HATA fusion", "state": "open", "draft": False,
                    "target": "develop", "source_branch": "HATA_fusion", "head_sha": "h", "base_sha": "b",
                    "author": {"login": "dragonshang", "name": "dragonshang", "html_url": None},
@@ -207,6 +207,19 @@ elif 'list' in args:
                               "reviewed_head_sha": None, "mode": None, "fingerprint": None,
                               "findings": 0, "severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
                               "coverage_gaps": 0, "job_status": None, "job_attempts": None,
+                              "job_error": None, "job_updated": None}},
+                  {"number": 433, "title": "已审查但又推送了新提交", "state": "open", "draft": False,
+                   "target": "develop", "source_branch": "updated", "head_sha": "c" * 40, "base_sha": "b",
+                   "author": {"login": "dragonshang", "name": "dragonshang", "html_url": None},
+                   "labels": [], "pipeline_status": None, "mergeable": True, "comments": 1,
+                   "added_lines": 3, "removed_lines": 1, "html_url": None,
+                   "created_at": None, "updated_at": "2026-11-16T20:00:00+08:00", "active": True,
+                   "review": {"status": "stale", "report_dir": "state/reports/433/old", "current": False,
+                              "checked_at": "2026-11-16T18:00:00+08:00", "invalidated_at": None,
+                              "reviewed_at": "2026-11-16T18:00:00+08:00",
+                              "reviewed_head_sha": "d" * 40, "mode": "live-pr", "fingerprint": "old",
+                              "findings": 2, "severity": {"critical": 0, "high": 1, "medium": 1, "low": 0},
+                              "coverage_gaps": 1, "job_status": "done", "job_attempts": 1,
                               "job_error": None, "job_updated": None}}]})
 elif 'show' in args:
     number = args[args.index('--pr') + 1] if '--pr' in args else '0'
@@ -342,7 +355,7 @@ async function main() {
     check('index.js 声明 tools 注入', Array.isArray(module.inject) && module.inject.includes('tools'));
 
     const { ctx, tools, routes } = makeFakeCtx();
-    module.apply(ctx, { projectRoot: root, python, cliTimeoutMs: 30000, syncTimeoutMs: 60000, bridgePort: 55999 });
+    module.apply(ctx, { projectRoot: root, python, cliTimeoutMs: 30000, syncTimeoutMs: 60000, bridgePort: 55999, autoReviewPollMs: 1000 });
 
     check('注册 7 个 Agent 工具', tools.size === 7, [...tools.keys()].join(','));
     check('注册前缀路由', routes.length === 1 && routes[0].kind === 'prefix');
@@ -352,6 +365,16 @@ async function main() {
     const startupLog = readFileSync(stubLog, 'utf8');
     check('启动时把中断的审查任务标记为失败', startupLog.indexOf('review recover --fail-running') >= 0,
       startupLog.split('\n').slice(0, 4).join(' | '));
+
+    // 伪造列表里 #433 的 head 已变（reviewed_head_sha != head_sha），应自动开始审查。
+    let autoLog = '';
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      autoLog = readFileSync(stubLog, 'utf8');
+      if (autoLog.indexOf('review run --pr 433') >= 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    check('PR 更新后自动启动审查', autoLog.indexOf('review run --pr 433') >= 0,
+      autoLog.split('\n').slice(-4).join(' | '));
 
     const projects = await callRoute(routes, '/recsdk-review/api/projects');
     check('GET /projects 200', projects.status === 200, String(projects.status));
@@ -468,7 +491,7 @@ async function main() {
       useHarness.body && useHarness.body.error);
 
     const list = await callRoute(routes, '/recsdk-review/api/pulls?project=recsdk');
-    check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 1);
+    check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 2);
 
     const detail = await callRoute(routes, '/recsdk-review/api/pulls/432?project=recsdk');
     check('GET /pulls/432?project 200', detail.status === 200
@@ -543,7 +566,7 @@ async function main() {
 
     const listTool = tools.get('recsdk_pr_list');
     const toolList = await listTool.execute({ project: 'recsdk' });
-    check('工具 recsdk_pr_list 可执行', Boolean(toolList && toolList.prs.length === 1));
+    check('工具 recsdk_pr_list 可执行', Boolean(toolList && toolList.prs.length === 2));
 
     const reviewTool = tools.get('recsdk_pr_review');
     const toolReview = await reviewTool.execute({ number: 432 });

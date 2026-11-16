@@ -272,6 +272,21 @@ REVIEW_SCHEMA = object_schema({"intent": TEXT, "summary": TEXT,
                                "findings": {"type": "array", "items": FINDING},
                                "risks_to_verify": STRINGS, "coverage_gaps": STRINGS,
                                "affected_flows": STRINGS, "verification_plan": STRINGS})
+# 增量审查（存在上一版报告时）额外要求逐条复核上一版结论；该字段可选，
+# 这样模型漏答时仍能按 uncertain 处理，而不是让整份审查因 Schema 失败重来。
+PREVIOUS_STATUS_SCHEMA = object_schema({
+    "id": TEXT,
+    "status": {"type": "string", "enum": ["fixed", "partially_fixed", "still_present", "uncertain"]},
+    "reason": TEXT,
+    "evidence": {"type": "array", "items": EVIDENCE},
+})
+REVIEW_SCHEMA_WITH_PREVIOUS = {
+    "type": "object",
+    "properties": {**REVIEW_SCHEMA["properties"],
+                   "previous_findings_status": {"type": "array", "items": PREVIOUS_STATUS_SCHEMA}},
+    "required": list(REVIEW_SCHEMA["required"]),
+    "additionalProperties": False,
+}
 FEATURE_SCHEMA = object_schema({"goal": TEXT, "acceptance_criteria": STRINGS,
                                 "proposed_changes": STRINGS, "system_impact": STRINGS,
                                 "verification_plan": STRINGS, "knowledge_updates": STRINGS,

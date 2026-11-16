@@ -83,6 +83,11 @@ window.__ModuleLoader__.load({
       'review.deepHint': '对变更源码做完整语义领域分析，较慢；自动模式在变更文件未被源码索引（如 patch/文档）时直接走快速审查。',
       'review.fastBadge': '快速审查',
       'review.deepBadge': '深度审查',
+      'comparison.title': '与上一版对比',
+      'comparison.summary': '已修复 {fixed} · 仍存在 {open} · 新增 {new}',
+      'comparison.previous': '上一版审查 head：{sha}',
+      'comparison.fixedTitle': '已修复',
+      'comparison.openTitle': '仍存在 / 部分修复',
       'review.modelRequired': '模型路由未就绪，无法执行审查（请到「模型配置」使用 Harness 模型）',
       'review.emptyHint': '可稍后启动审查；结果生成后会显示在这里。',
       'review.queued': '审查排队中',
@@ -323,6 +328,11 @@ window.__ModuleLoader__.load({
       'review.deepHint': 'Full semantic domain analysis of the changed source (slower). Auto mode reviews quickly when the changed files are not source-indexed (patches, docs).',
       'review.fastBadge': 'Quick review',
       'review.deepBadge': 'Deep review',
+      'comparison.title': 'Changes since last review',
+      'comparison.summary': '{fixed} fixed · {open} open · {new} new',
+      'comparison.previous': 'Last reviewed head: {sha}',
+      'comparison.fixedTitle': 'Fixed',
+      'comparison.openTitle': 'Still open / partially fixed',
       'review.modelRequired': 'Model route is not ready (open Model route and use the Harness model)',
       'review.emptyHint': 'A review can be started later; results will appear here.',
       'review.queued': 'Review queued',
@@ -1943,6 +1953,44 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function ComparisonBlock(props) {
+      const t = props.t;
+      const comparison = isObject(props.comparison) ? props.comparison : null;
+      if (!comparison) return null;
+      const fixed = Array.isArray(comparison.fixed) ? comparison.fixed : [];
+      const open = Array.isArray(comparison.open) ? comparison.open : [];
+      const fresh = Array.isArray(comparison.new) ? comparison.new : [];
+      function renderItems(items) {
+        return h('ul', { className: 'rr-bullets' }, items.map(function (item, index) {
+          const evidence = Array.isArray(item.evidence) && item.evidence.length ? item.evidence[0] : null;
+          return h('li', { key: index },
+            (item.severity ? '[' + item.severity + '] ' : '') + asText(item.title, ''),
+            item.reason ? ' — ' + asText(item.reason, '') : null,
+            evidence && evidence.path
+              ? h('code', { className: 'rr-evidence-path' },
+                  asText(evidence.path, '') + (evidence.line ? ':' + String(evidence.line) : ''))
+              : null);
+        }));
+      }
+      return h('div', { className: 'rr-list-block rr-comparison' },
+        h('div', { className: 'rr-list-label' }, t('comparison.title')),
+        h('div', { className: 'rr-muted' }, fill(t('comparison.summary'), {
+          fixed: fixed.length, open: open.length, new: fresh.length,
+        })),
+        h('div', { className: 'rr-muted' }, fill(t('comparison.previous'), {
+          sha: shortSha(asText(comparison.previous_head_sha, '')) || t('common.unknown'),
+        })),
+        fixed.length
+          ? h('div', { className: 'rr-comparison-group' },
+              h('div', { className: 'rr-list-label' }, t('comparison.fixedTitle')), renderItems(fixed))
+          : null,
+        open.length
+          ? h('div', { className: 'rr-comparison-group' },
+              h('div', { className: 'rr-list-label' }, t('comparison.openTitle')), renderItems(open))
+          : null
+      );
+    }
+
     function BulletBlock(props) {
       if (!Array.isArray(props.items) || props.items.length === 0) return null;
       return h('div', { className: 'rr-list-block' },
@@ -2062,6 +2110,7 @@ window.__ModuleLoader__.load({
             );
           })
         ) : h('div', { className: 'rr-no-findings' }, t('review.noFindings')),
+        h(ComparisonBlock, { comparison: review && review.comparison, t: t }),
         h(BulletBlock, { title: t('lists.affectedFlows'), items: asLines(review.affected_flows) }),
         h(BulletBlock, { title: t('lists.risksToVerify'), items: asLines(review.risks_to_verify) }),
         h(BulletBlock, { title: t('lists.coverageGaps'), items: asLines(review.coverage_gaps) }),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -9,8 +10,11 @@ from .backends import artifact_identity, create_model
 from .common import atomic_json, digest, now, read_json
 from .context import ANALYZER, Context
 from .gitcode import GitCode
-from .model import GUARD, REVIEW_SCHEMA, expert
+from .model import GUARD, REVIEW_SCHEMA, REVIEW_SCHEMA_WITH_PREVIOUS, expert
 from .state import State
+
+
+PREVIOUS_STATUSES = {"fixed", "partially_fixed", "still_present", "uncertain"}
 
 
 def progress(message):
@@ -22,6 +26,11 @@ def progress(message):
 def indexed_paths(changed, coverage):
     """变更路径中会被确定性解析器建图的源码文件（coverage == 'structural'）。"""
     return [path for path in changed if coverage.get(path) == "structural"]
+
+
+def normalized_title(title):
+    """标题归一化，用于识别「上一版问题被换了个说法再报一次」。"""
+    return re.sub(r"[\s`*_：:，,。.、/\\()（）\[\]-]+", "", str(title or "")).lower()
 
 
 class Reviews:
@@ -105,6 +114,103 @@ class Reviews:
         pr = self.api.pull(job["number"])
         return self.api.active(pr) and self.job(pr)["fingerprint"] == job["fingerprint"]
 
+    def previous_review(self, job):
+        """同一 PR 上一份（指纹不同）审查报告，用于增量对比。"""
+        root = self.config.repo_state / "reports" / job["number"]
+        if not root.is_dir():
+            return None
+        best = None
+        for path in root.iterdir():
+            if not path.is_dir() or path.name == job["fingerprint"]:
+                continue
+            data = read_json(path / "review.json", {})
+            if not isinstance(data, dict):
+                continue
+            review, metadata = data.get("review"), data.get("metadata")
+            if not isinstance(review, dict) or not isinstance(metadata, dict):
+                continue
+            stamp = str(metadata.get("generated_at") or "")
+            if best is None or stamp > best["generated_at"]:
+                best = {"report": str(path), "generated_at": stamp,
+                        "head_sha": metadata.get("head_sha"), "review": review}
+        return best
+
+    @staticmethod
+    def previous_findings(previous):
+        """把上一版 findings 编号成 P1..Pn，供模型逐条回填状态。"""
+        if not previous:
+            return []
+        findings = previous["review"].get("findings")
+        if not isinstance(findings, list):
+            return []
+        items = []
+        for index, finding in enumerate(findings[:30], start=1):
+            if not isinstance(finding, dict):
+                continue
+            evidence = finding.get("evidence")
+            items.append({
+                "id": f"P{index}",
+                "title": str(finding.get("title") or "")[:200],
+                "severity": finding.get("severity"),
+                "evidence": [{"path": e.get("path"), "line": e.get("line")}
+                             for e in (evidence if isinstance(evidence, list) else [])
+                             if isinstance(e, dict)][:4],
+            })
+        return items
+
+    @staticmethod
+    def compare_previous(previous, previous_findings, result):
+        """把模型对上一版结论的复核结果整理成 已修复/仍存在/新增 三组。"""
+        if not previous:
+            return None
+        known = {item["id"] for item in previous_findings}
+        reported = {}
+        entries = result.get("previous_findings_status")
+        for entry in entries if isinstance(entries, list) else []:
+            if not isinstance(entry, dict):
+                continue
+            identifier = str(entry.get("id") or "").strip()
+            if identifier not in known or identifier in reported:
+                continue
+            status = entry.get("status")
+            if status not in PREVIOUS_STATUSES:
+                status = "uncertain"
+            evidence = entry.get("evidence")
+            reported[identifier] = {
+                "status": status,
+                "reason": str(entry.get("reason") or "")[:600],
+                "evidence": [e for e in (evidence if isinstance(evidence, list) else [])
+                             if isinstance(e, dict)][:5],
+            }
+        items = []
+        for item in previous_findings:
+            update = reported.get(item["id"], {"status": "uncertain", "reason": "", "evidence": []})
+            items.append({**item, **update})
+        fixed = [item for item in items if item["status"] == "fixed"]
+        open_items = [item for item in items if item["status"] in {"partially_fixed", "still_present"}]
+        uncertain = [item for item in items if item["status"] == "uncertain"]
+        repeated = {normalized_title(item["title"]) for item in open_items}
+        current = [finding for finding in (result.get("findings") or [])
+                   if isinstance(finding, dict)
+                   and normalized_title(finding.get("title")) not in repeated]
+        return {"previous_head_sha": previous.get("head_sha"),
+                "previous_report": previous.get("report"),
+                "previous_reviewed_at": previous.get("generated_at"),
+                "generated_at": now(), "items": items,
+                "fixed": fixed, "open": open_items, "uncertain": uncertain,
+                "new": current}
+
+    def incremental_patch(self, previous, head_sha, limit=40000):
+        """上一版审查之后的新增提交 diff（只用于聚焦，不影响完整 diff）。"""
+        if not previous or not previous.get("head_sha") or previous["head_sha"] == head_sha:
+            return ""
+        try:
+            return self.git.command("diff", "--no-ext-diff", "--no-textconv", "--unified=3",
+                                    previous["head_sha"], head_sha)[:limit]
+        except Exception:
+            # 上一版 head 已不在镜像里时退化为无增量视图，不阻塞审查。
+            return ""
+
     def head_knowledge(self, job, changed, base_sid, mode="auto"):
         """选择 head 快照的语义/结构版本，返回 (knowledge_mode, snapshot_id)。
 
@@ -157,6 +263,9 @@ class Reviews:
         patch = self.git.command("diff", "--no-ext-diff", "--no-textconv", "--unified=5", merge_base, job["head_sha"])
         limit = self.config.get("max_diff_chars", 160000)
         diff_truncated = len(patch) > limit
+        previous = None if historical else self.previous_review(job)
+        previous_findings = self.previous_findings(previous)
+        incremental = self.incremental_patch(previous, job["head_sha"]) if previous_findings else ""
         folder = self.config.repo_state / "reports" / job["number"] / job["fingerprint"]
         folder.mkdir(parents=True, exist_ok=True)
         progress(f"pr #{job['number']}：调用模型执行系统级审查（{len(changed)} 个变更文件）")
@@ -165,6 +274,8 @@ class Reviews:
                         changed_files=changed, generated_at=now(), ci=self.api.ci_evidence(pr),
                         backend=artifact_identity(self.config), knowledge_mode=knowledge_mode,
                         head_snapshot_mode="structural" if knowledge_mode == "fast" else "semantic",
+                        previous_head_sha=previous.get("head_sha") if previous else None,
+                        previous_report=previous.get("report") if previous else None,
                         mode="historical-replay" if historical else "live-pr")
         atomic_json(folder / "input.json", {"metadata": metadata, "base_context": base_pack, "head_context": head_pack})
         prompt = GUARD + "\n执行系统级 PR review。以需求符合性、系统功能、性能、兼容性为主要审查维度。\n"
@@ -180,11 +291,27 @@ class Reviews:
                                                  "metadata": metadata}, ensure_ascii=False)
         prompt += "\n基线知识：" + json.dumps(base_pack, ensure_ascii=False)
         prompt += "\n候选知识：" + json.dumps(head_pack, ensure_ascii=False)
+        if previous_findings:
+            prompt += (f"\n增量审查：本 PR 上一版审查的 head=`{previous['head_sha']}`。请逐条复核上一版结论："
+                       "status 取 fixed（已修复）/ partially_fixed（部分修复）/ still_present（仍存在）/"
+                       "uncertain（无法确认），按 id 填进 previous_findings_status，并给出新证据。"
+                       "findings 只放本次新发现的问题；不要重复上一版仍存在或已修复的问题。")
+            prompt += "\n上一版结论：" + json.dumps(previous_findings, ensure_ascii=False)
+        if incremental:
+            prompt += ("\n上一版审查后的新增提交（"
+                       + str(previous.get("head_sha"))[:12] + ".." + job["head_sha"][:12] + "）diff：\n" + incremental)
         prompt += "\nPR diff：\n" + patch[:limit]
-        result = self.model.invoke(prompt, REVIEW_SCHEMA, head_workspace, folder / "model.json",
+        schema = REVIEW_SCHEMA_WITH_PREVIOUS if previous_findings else REVIEW_SCHEMA
+        result = self.model.invoke(prompt, schema, head_workspace, folder / "model.json",
                                    sources={"head": head_workspace, "target": base_workspace, "merge_base": before_workspace})
         progress(f"pr #{job['number']}：校验审查证据（路径与行号）")
         self.validate_findings(result, [head_workspace, base_workspace, before_workspace])
+        comparison = self.compare_previous(previous, previous_findings, result)
+        if comparison:
+            # 报告的主体只保留本轮新发现；上一版的结论在 comparison 中逐条给出状态。
+            result["findings"] = comparison["new"]
+            progress(f"pr #{job['number']}：对比上一版（已修复 {len(comparison['fixed'])}，"
+                     f"仍存在 {len(comparison['open'])}，新增 {len(comparison['new'])}）")
         result["coverage_gaps"] += [metadata["ci"]["coverage_gap"],
                                     "未在本机执行 PR 代码、构建、测试或 Ascend 性能实测。"]
         if knowledge_mode == "fast":
@@ -196,8 +323,10 @@ class Reviews:
             result["coverage_gaps"].append("图谱上下文被截断，不能视为完整影响闭包。")
         current = False if historical else self.check_fresh(job)
         atomic_json(folder / "review.json", {"metadata": metadata, "review": result})
+        if comparison:
+            atomic_json(folder / "comparison.json", comparison)
         atomic_json(folder / "status.json", {"current": current, "checked_at": now()})
-        self.render(folder, metadata, result, current)
+        self.render(folder, metadata, result, current, comparison)
         progress(f"pr #{job['number']}：写入报告（current={current}）")
         if current:
             (folder / "STALE.txt").unlink(missing_ok=True)
@@ -270,7 +399,7 @@ class Reviews:
                     raise ValueError("Finding cites a nonexistent source line")
 
     @staticmethod
-    def render(folder, metadata, result, current):
+    def render(folder, metadata, result, current, comparison=None):
         knowledge_mode = "快速（结构索引 + diff，未做 head 语义领域分析）" \
             if metadata.get("knowledge_mode") == "fast" else "深度（base/head 语义知识）"
         lines = [f"# PR !{metadata['number']} 系统级审查", "", f"目标：`{metadata['target']}`",
@@ -285,10 +414,30 @@ class Reviews:
             lines += [f"验证方法：{f['verification']}", ""]
         if not result["findings"]:
             lines += ["在本次已覆盖证据中未确认缺陷；这不代表系统功能或性能已通过验证。", ""]
+        if comparison:
+            lines += Reviews.comparison_lines(comparison)
         for title, key in [("受影响流程", "affected_flows"), ("待验证风险", "risks_to_verify"),
                            ("覆盖缺口", "coverage_gaps"), ("验证计划", "verification_plan")]:
             lines += ["## " + title, ""] + ["- " + s for s in result[key]] + [""]
         (folder / "review.md").write_text("\n".join(lines), encoding="utf-8")
+
+    @staticmethod
+    def comparison_lines(comparison):
+        labels = {"fixed": "已修复", "still_present": "仍存在",
+                  "partially_fixed": "部分修复", "uncertain": "无法确认"}
+        lines = ["## 与上一版审查的对比", "",
+                 f"上一版 head：`{comparison.get('previous_head_sha')}`；"
+                 f"上一版报告：{comparison.get('previous_report')}", "",
+                 f"已修复 {len(comparison['fixed'])} 条；仍存在/部分修复 {len(comparison['open'])} 条；"
+                 f"本轮新增 {len(comparison['new'])} 条。", ""]
+        for item in comparison["items"]:
+            label = labels.get(item["status"], item["status"])
+            detail = ("：" + item["reason"]) if item.get("reason") else ""
+            lines.append(f"- `{item['id']}` [{label}] {item['title']}{detail}")
+        if comparison["new"]:
+            lines += ["", "本轮新增（详见上方确认的问题）："]
+            lines += [f"- [{f['severity']}] {f['title']}" for f in comparison["new"]]
+        return lines + [""]
 
     def process_one(self, job_id=None, *, mode="auto"):
         if job_id:

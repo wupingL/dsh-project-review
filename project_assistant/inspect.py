@@ -547,9 +547,43 @@ def _extended_review(view, report, metadata, review):
         "coverage_gaps": _strings(review.get("coverage_gaps")),
         "affected_flows": _strings(review.get("affected_flows")),
         "verification_plan": _strings(review.get("verification_plan")),
+        "comparison": _comparison(report),
         "stale_message": _stale_message(report),
     })
     return value
+
+
+def _comparison(report):
+    """与上一版审查的对比（已修复 / 仍存在 / 本轮新增），没有上一版时为 None。"""
+    data = _load_json(report / "comparison.json") if report is not None else None
+    if not isinstance(data, dict):
+        return None
+    items = data.get("items")
+    return {
+        "previous_head_sha": _text(data.get("previous_head_sha")),
+        "previous_report": _text(data.get("previous_report")),
+        "previous_reviewed_at": _text(data.get("previous_reviewed_at")),
+        "items": [_comparison_item(item) for item in items if isinstance(item, dict)]
+        if isinstance(items, list) else [],
+        "fixed": [_comparison_item(item) for item in data.get("fixed") or [] if isinstance(item, dict)],
+        "open": [_comparison_item(item) for item in data.get("open") or [] if isinstance(item, dict)],
+        "new": [_finding_card(item) for item in data.get("new") or [] if isinstance(item, dict)],
+    }
+
+
+def _comparison_item(item):
+    evidence = item.get("evidence")
+    return {
+        "id": _text(item.get("id")),
+        "title": _text(item.get("title")),
+        "severity": _text(item.get("severity")),
+        "status": _text(item.get("status")),
+        "reason": _text(item.get("reason")),
+        "evidence": [{"path": _text(entry.get("path")), "line": _int(entry.get("line")),
+                      "reason": _text(entry.get("reason"))}
+                     for entry in (evidence if isinstance(evidence, list) else [])
+                     if isinstance(entry, dict)],
+    }
 
 
 def _changed_files(report):

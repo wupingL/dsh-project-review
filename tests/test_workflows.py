@@ -27,15 +27,28 @@ class FakeModel:
         self.calls.append((str(output), prompt))
         if self.fail:
             raise RuntimeError("Simulated model failure")
-        if schema is DOMAIN_SCHEMA:
+        properties = schema.get("properties", {})
+        if "contracts" in properties:
             source = next(p for p in cwd.rglob("*.py") if p.is_file()).relative_to(cwd).as_posix()
             result = {"summary": "测试领域", "flows": ["入口→计算→返回"],
                       "contracts": [{"statement": "源码观察", "kind": "observed", "evidence": [{"path": source, "line": 1, "reason": "定义"}]}],
                       "architecture_decisions": [], "performance_evidence": [], "test_entrypoints": [], "gaps": []}
-        elif schema is REVIEW_SCHEMA:
-            result = {"intent": "测试变更", "summary": "测试审查", "findings": [], "risks_to_verify": [],
-                      "coverage_gaps": [], "affected_flows": ["入口→计算"], "verification_plan": ["需要实测"]}
-        elif "goal" in schema["properties"]:
+        elif "findings" in properties:
+            source = next(p for p in cwd.rglob("*.py") if p.is_file()).relative_to(cwd).as_posix()
+            result = {"intent": "测试变更", "summary": "测试审查",
+                      "findings": [{"title": "测试缺陷", "severity": "medium", "trigger": "触发",
+                                    "system_function": "功能", "consequence": "后果", "confidence": "medium",
+                                    "evidence": [{"path": source, "line": 1, "reason": "测试证据"}],
+                                    "verification": "验证"}],
+                      "risks_to_verify": [], "coverage_gaps": [], "affected_flows": ["入口→计算"],
+                      "verification_plan": ["需要实测"]}
+            if "上一版结论：" in prompt:
+                previous = json.loads(prompt.rsplit("上一版结论：", 1)[1].splitlines()[0])
+                result["previous_findings_status"] = [
+                    {"id": item["id"], "status": "fixed" if index == 0 else "still_present",
+                     "reason": "测试复核", "evidence": []}
+                    for index, item in enumerate(previous)]
+        elif "goal" in properties:
             result = {"goal": "增加功能", "acceptance_criteria": ["返回新值"], "proposed_changes": ["增加函数"],
                       "system_impact": ["调用方"], "verification_plan": ["局部测试"], "knowledge_updates": [], "open_questions": []}
         else:

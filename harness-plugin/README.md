@@ -1,4 +1,4 @@
-# RecSDK 代码检视（DSH 插件 bundle）
+﻿# RecSDK 代码检视（DSH 插件 bundle）
 
 把 `project-assistant` 接入 DeepSeek Harness Web UI：侧栏「代码检视」整页。页面是一个项目控制台：
 
@@ -128,6 +128,22 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 
 同一提交重复审查直接命中已建快照；只有新提交才需要补建。
 
+## PR 推送新提交后：自动重审 + 与上一版对比
+
+- **自动重审**：插件每 `autoReviewPollMs`（默认 120000 毫秒，可用 `autoReviewUpdates: false` 关闭）检查一次项目列表。
+  只要某个 PR **已经审查过**且 `head_sha` 与 `reviewed_head_sha` 不一致（或报告已过期），就以 `auto` 模式自动
+  启动对**更新后版本**的审查；从未审查过的 PR 不会自动排队（避免一进页面就把积压 PR 全部跑一遍）。
+  每个项目同时只跑一个，同一 PR 10 分钟内不会重复触发。
+- **与上一版对比**：重新审查时控制器会读取同一 PR 上一份报告，把上一版结论编号为 `P1…Pn` 交给模型逐条复核，
+  新报告里给出 `comparison.json`：
+  - `fixed`：已修复（附新证据/说明）
+  - `open`：仍存在或部分修复
+  - `uncertain`：无法确认（模型漏答时也落到这里）
+  - `new`：本轮新发现（同时写入报告的「确认的问题」）
+  报告 `review.md` 增加「与上一版审查的对比」，页面详情也有对应区块；`review.json.metadata` 记录
+  `previous_head_sha` / `previous_report` 以便追溯。
+- 临时手工触发：`review run --pr <n> --mode deep`（强制完整语义）。
+
 ## 本地路径（代码镜像 / 知识库）
 
 页面直接显示本地路径，点击路径文字即复制：
@@ -177,7 +193,7 @@ plugin_manager remove_bundle target = "@local/recsdk-review"
 ## 验证
 
 ```powershell
-# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，58 项检查
+# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，59 项检查
 node scripts\verify_harness_plugin.mjs
 
 # 2) 控制器只读命令

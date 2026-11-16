@@ -33,7 +33,7 @@ REVIEW_KEYS = {
 SHOW_KEYS = {"generated_at", "source", "source_error", "pr", "files", "review", "job"}
 SHOW_REVIEW_KEYS = REVIEW_KEYS | {
     "metadata", "intent", "summary", "risks_to_verify", "affected_flows",
-    "verification_plan", "stale_message",
+    "verification_plan", "comparison", "stale_message",
 }
 FINDING_KEYS = {"title", "severity", "trigger", "system_function", "consequence",
                 "evidence", "verification", "confidence"}
@@ -149,7 +149,7 @@ class InspectFixture(unittest.TestCase):
                      changed_files=None, status_present=True, invalidated_at=None,
                      stale_text=None, generated_at="2026-01-03T00:00:00+00:00",
                      checked_at="2026-01-04T00:00:00+00:00", mode="live-pr",
-                     metadata_extra=None):
+                     metadata_extra=None, comparison=None):
         folder = self.reports / str(number) / fingerprint
         findings = findings if findings is not None else []
         changed_files = changed_files if changed_files is not None else []
@@ -190,6 +190,8 @@ class InspectFixture(unittest.TestCase):
             "requested_sources": [],
         }
         atomic_json(folder / "review.json", {"metadata": metadata, "review": review})
+        if comparison is not None:
+            atomic_json(folder / "comparison.json", comparison)
         if status_present:
             status = {"current": current, "checked_at": checked_at}
             if invalidated_at:
@@ -426,7 +428,20 @@ class ShowTests(InspectFixture):
         folder = self.write_report(
             301, "a" * 64, current=True, findings=findings,
             changed_files=["training/a.py", "cust_op/b.cpp"],
-            metadata_extra={"fingerprint": "meta-fp-301"})
+            metadata_extra={"fingerprint": "meta-fp-301"},
+            comparison={
+                "previous_head_sha": "b" * 40,
+                "previous_report": "reports/301/old",
+                "previous_reviewed_at": "2026-01-02T00:00:00+00:00",
+                "items": [{"id": "P1", "title": "旧问题", "severity": "high",
+                           "status": "fixed", "reason": "已修复",
+                           "evidence": [{"path": "training/a.py", "line": 12, "reason": "新增校验"}]}],
+                "fixed": [{"id": "P1", "title": "旧问题", "severity": "high",
+                           "status": "fixed", "reason": "已修复",
+                           "evidence": [{"path": "training/a.py", "line": 12, "reason": "新增校验"}]}],
+                "open": [],
+                "new": [],
+            })
 
         def forbidden_network(config):
             raise AssertionError("offline mode must not construct GitCode")
@@ -455,6 +470,9 @@ class ShowTests(InspectFixture):
         self.assertEqual(review["reviewed_head_sha"], "head-301")
         self.assertEqual(review["mode"], "live-pr")
         self.assertEqual(review["knowledge_mode"], "deep")
+        self.assertEqual(review["comparison"]["previous_head_sha"], "b" * 40)
+        self.assertEqual(review["comparison"]["fixed"][0]["id"], "P1")
+        self.assertEqual(review["comparison"]["fixed"][0]["status"], "fixed")
         self.assertEqual(review["fingerprint"], "meta-fp-301")
         self.assertEqual(review["metadata"]["changed_files"], ["training/a.py", "cust_op/b.cpp"])
         self.assertEqual(review["intent"], "意图 301")

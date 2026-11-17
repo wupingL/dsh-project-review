@@ -13,6 +13,7 @@ from .context import Context
 from .feature import Features
 from .gitcode import GitCode
 from .inspect import list_pulls, show_pull
+from .platforms import create_api
 from .projects import (import_project, knowledge_status, list_projects, model_apply,
                        model_set, model_set_credential, model_show, model_test, probe,
                        project_branches, remove_project, resolve_config, sync_knowledge)
@@ -42,12 +43,12 @@ def doctor(config, network=False):
     errors.update(backend["errors"])
     if network:
         try:
-            pr_list = GitCode(config).pulls()
-            checks["gitcode_read"] = True
+            pr_list = create_api(config).pulls()
+            checks["repo_read"] = True
             checks["open_prs"] = len(pr_list)
         except Exception as exc:
-            checks["gitcode_read"] = False
-            errors["gitcode_read"] = str(exc)
+            checks["repo_read"] = False
+            errors["repo_read"] = str(exc)
     return {"ready": all(v is not False for v in checks.values()), "checks": checks,
             "errors": errors, "model": model_destination(config)}
 

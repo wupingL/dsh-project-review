@@ -211,7 +211,7 @@ class InspectFixture(unittest.TestCase):
         self.assertIsInstance(encoded, str)
 
     def live(self, fake):
-        return patch("project_assistant.inspect.GitCode", lambda config: fake)
+        return patch("project_assistant.platforms.GitCode", lambda config: fake)
 
 
 class LiveListTests(InspectFixture):
@@ -292,7 +292,7 @@ class OfflineListTests(InspectFixture):
         def forbidden(config):
             raise AssertionError("offline mode must not construct GitCode")
 
-        with patch("project_assistant.inspect.GitCode", forbidden):
+        with patch("project_assistant.platforms.GitCode", forbidden):
             result = list_pulls(self.config, offline=True)
 
         self.assertEqual(result["source"], "cache")
@@ -451,7 +451,7 @@ class ShowTests(InspectFixture):
         def forbidden_network(config):
             raise AssertionError("offline mode must not construct GitCode")
 
-        with patch("project_assistant.inspect.GitCode", forbidden_network):
+        with patch("project_assistant.platforms.GitCode", forbidden_network):
             result = show_pull(self.config, 301, offline=True)
 
         self.assertEqual(set(result), SHOW_KEYS)

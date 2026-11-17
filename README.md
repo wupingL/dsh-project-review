@@ -16,7 +16,13 @@ Three reusable project workflow skills share one Python controller and the pinne
 | pnpm | 9+（安装 pinned 的 Understand 依赖） |
 | Python | 3.11+（控制器只用标准库；`setup.ps1` 会创建 `.venv`） |
 | DeepSeek Harness | 0.2.2+（Web GUI；模型桥要求 Harness 处于运行状态） |
-| 网络 | 首次初始化会克隆两个 pinned 依赖并构建；审查需访问 GitCode |
+| 网络 | 首次初始化会克隆两个 pinned 依赖并构建；审查需访问 GitCode/GitHub |
+
+支持的代码托管平台：**GitCode/AtomGit** 与 **GitHub**。仓库地址填 HTTPS 地址即可，控制器按域名自动选择 API 适配器：
+
+- GitCode/AtomGit：读 PR/评论用 `GITCODE_TOKEN`（`pull_requests` 权限；公开仓库可匿名读）。
+- GitHub：优先读 `GITHUB_TOKEN` / `GH_TOKEN` 环境变量（Windows 用户环境变量也认）；都没有时**自动回退本机 git 凭据助手**（`git credential fill`），所以用 git/gh 登录过就能直接读。私有仓库必须能拿到 token。
+- GitHub 已知限制：不读取 Actions/Check 状态（覆盖缺口里会标注）；评论的 `resolved` 状态 REST 不提供，去重按「未解决」处理；行内评论用 `line + side=RIGHT`，不在 diff 中时退化为 PR 级评论。
 
 ### 2. 获取并初始化控制器
 

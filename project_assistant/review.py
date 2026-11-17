@@ -10,7 +10,7 @@ from .backends import artifact_identity, create_model
 from .comments import find_overlapping_comment, normalize_comments, overlap_strength
 from .common import atomic_json, digest, now, read_json
 from .context import ANALYZER, Context
-from .gitcode import GitCode
+from .platforms import create_api
 from .model import GUARD, REVIEW_SCHEMA, expert, review_schema
 from .state import State
 
@@ -42,7 +42,7 @@ def brief(value, limit):
 class Reviews:
     def __init__(self, config, api=None, context=None, model=None):
         self.config = config
-        self.api = api or GitCode(config)
+        self.api = api or create_api(config)
         self.model = model or create_model(config)
         self.context = context or Context(config, self.model)
         self.git = self.context.git

@@ -40,11 +40,18 @@ class FakeApi:
     def comments(self, number):
         return list(self.comment_rows)
 
-    def post(self, path, payload):
-        self.calls.append((path, payload))
-        if not self.inline_ok and "position" in payload:
-            raise RuntimeError("GitCode 评论接口 HTTP 400；请检查 token 权限或评论位置")
+    def _record(self, payload):
+        self.calls.append(payload)
         return {"id": "comment-%d" % len(self.calls)}
+
+    def post_inline_comment(self, number, body, path, line, commit_id):
+        if not self.inline_ok:
+            raise RuntimeError("评论接口 HTTP 400；行号不在 diff 中")
+        return self._record({"body": body, "path": path, "line": line,
+                             "position": line, "commit_id": commit_id, "number": number})
+
+    def post_general_comment(self, number, body):
+        return self._record({"body": body, "number": number})
 
 
 class FakeGit:
@@ -139,12 +146,11 @@ class PostFindingsTests(unittest.TestCase):
                                ["F1", "F2"], dry_run=False)
         self.assertTrue(result["ok"])
         self.assertEqual(result["posted"], 2)
-        endpoint, inline_payload = api.calls[0]
-        self.assertEqual(endpoint, "/pulls/440/comments")
+        inline_payload = api.calls[0]
         self.assertEqual(inline_payload["path"], "src/a.py")
         self.assertEqual(inline_payload["position"], 12)
         self.assertEqual(inline_payload["commit_id"], HEAD)
-        self.assertEqual(len(api.calls[1][1]), 1)  # 无 diff 锚点 → PR 级评论
+        self.assertEqual(set(api.calls[1]), {"body", "number"})  # 无 diff 锚点 → PR 级评论
         stored = posted_comments(self.folder)
         self.assertEqual([item["finding"] for item in stored], ["F1", "F2"])
         self.assertTrue(stored[0]["inline"])
@@ -155,7 +161,8 @@ class PostFindingsTests(unittest.TestCase):
         result = self.run_post(api, FakeGit({"src/a.py": {12}}), self.report(), ["F1"], dry_run=False)
         self.assertTrue(result["ok"])
         self.assertEqual(result["posted"], 1)
-        self.assertEqual(len(api.calls), 2)
+        self.assertEqual(len(api.calls), 1)
+        self.assertIn("目标位置：`src/a.py:12`", api.calls[0]["body"])
         self.assertTrue(any("行内评论被拒绝" in note for note in result["notes"]))
         self.assertFalse(result["items"][0]["inline"])
 
@@ -188,11 +195,12 @@ class PostFindingsTests(unittest.TestCase):
 
     def test_missing_token_is_reported_before_posting(self):
         api = FakeApi(self.pr)
-        with patch("project_assistant.comments.gitcode_token", return_value=None):
+        with patch("project_assistant.comments.gitcode_token", return_value=None), \
+                patch("project_assistant.comments.github_token", return_value=None):
             with self.assertRaises(ValueError) as caught:
                 post_findings(self.config, 440, ["F1"], api=api, git=FakeGit({"src/a.py": {12}}),
                               report=self.report(), dry_run=False, delay=0)
-        self.assertIn("GITCODE_TOKEN", str(caught.exception))
+        self.assertIn("token", str(caught.exception).lower())
         self.assertEqual(api.calls, [])
 
     def test_unresolved_existing_comment_skips_duplicate(self):

@@ -42,11 +42,21 @@ class Git:
                          "+refs/heads/*:refs/remotes/origin/*")
 
     def refresh(self):
+        """拉取已配置分支。
+
+        配置里可能残留远端已删除的分支（仓库演进后很常见）：单个分支缺失不应让
+        其他分支的审查/同步整体失败，返回缺失分支列表由调用方决定如何提示。
+        """
         self.initialize()
+        missing = []
         for branch in self.config.get("branches"):
             self.command("check-ref-format", "refs/heads/" + branch)
-            self.command("fetch", "--no-tags", "origin",
-                         f"+refs/heads/{branch}:refs/remotes/origin/{branch}")
+            try:
+                self.command("fetch", "--no-tags", "origin",
+                             f"+refs/heads/{branch}:refs/remotes/origin/{branch}")
+            except RuntimeError:
+                missing.append(branch)
+        return missing
 
     def fetch_branch(self, branch):
         """拉取任意分支到 refs/remotes/origin/<branch>（不改变已配置分支列表）。

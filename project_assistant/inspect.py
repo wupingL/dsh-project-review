@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .common import now
 from .gitcode import GitCode
+from .platforms import create_api
 
 _OPEN_STATES = frozenset({"open", "opened"})
 _SEVERITIES = ("critical", "high", "medium", "low")
@@ -678,12 +679,12 @@ def list_pulls(config, *, offline=False):
 
     if not offline:
         try:
-            pulls = GitCode(config).pulls()
+            pulls = create_api(config).pulls()
             if not isinstance(pulls, list):
-                raise RuntimeError("Unexpected GitCode PR list response")
+                raise RuntimeError("Unexpected PR list response")
             rows = pulls
             source = "live"
-        except Exception as exc:  # network/token/response failures degrade to cache
+        except Exception as exc:  # network/token/platform failures degrade to cache
             source_error = str(exc) or exc.__class__.__name__
 
     pulls = []
@@ -748,9 +749,9 @@ def show_pull(config, number, *, offline=False):
 
     if not offline:
         try:
-            detail = GitCode(config).pull(number)
+            detail = create_api(config).pull(number)
             if not isinstance(detail, dict):
-                raise RuntimeError("Unexpected GitCode PR detail response")
+                raise RuntimeError("Unexpected PR detail response")
             raw = detail
             source = "live"
         except Exception as exc:  # live detail is best-effort

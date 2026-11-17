@@ -103,6 +103,15 @@ class GitCode:
             page += 1
         return rows
 
+    def post_inline_comment(self, number, body, path, line, commit_id):
+        return self.post(f"/pulls/{int(number)}/comments", {
+            "body": body, "path": path, "position": int(line),
+            "commit_id": commit_id, "position_type": "text",
+        })
+
+    def post_general_comment(self, number, body):
+        return self.post(f"/pulls/{int(number)}/comments", {"body": body})
+
     @staticmethod
     def active(pr):
         return pr.get("state") in {"open", "opened"} and not pr.get("draft", False)

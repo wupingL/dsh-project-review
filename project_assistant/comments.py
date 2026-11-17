@@ -18,7 +18,9 @@ from pathlib import Path
 
 from .common import atomic_json, now, read_json
 from .git import Git
-from .gitcode import GitCode, gitcode_token
+from .gitcode import gitcode_token
+from .github import github_token
+from .platforms import create_api, repo_host
 
 
 SEVERITY_LABELS = {"critical": "严重", "high": "高", "medium": "中", "low": "低"}
@@ -280,12 +282,17 @@ def _current_report(config, number):
     return data, review, metadata
 
 
+def token_present():
+    """当前平台是否有写评论所需 token（GitCode 用 GITCODE_TOKEN，GitHub 用 GITHUB_TOKEN/GH_TOKEN）。"""
+    return bool(gitcode_token() or github_token())
+
+
 def _source_for(pr):
     source = pr.get("source_git_url")
     if not source:
         head = pr.get("head") or {}
         repo = head.get("repo") or {}
-        source = repo.get("clone_url") or ("https://gitcode.com/" + repo["full_name"] if repo.get("full_name") else "")
+        source = repo.get("clone_url") or ("https://github.com/" + repo["full_name"] if repo.get("full_name") else "")
     return source
 
 
@@ -296,7 +303,8 @@ def _added_lines(config, pr, head_sha):
         git.initialize()
         git.fetch_head(_source_for(pr), head_sha,
                        branch=pr.get("source_branch") or (pr.get("head") or {}).get("ref"))
-        base_sha = (pr.get("base") or {}).get("sha") or git.resolve(GitCode.target(pr))
+        base = pr.get("base") or {}
+        base_sha = base.get("sha") or git.resolve(base.get("ref") or "HEAD")
         merge_base = git.merge_base(base_sha, head_sha)
         return git, merge_base
     except Exception:
@@ -318,7 +326,7 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
 
     返回结构：{ok, dry_run, head_sha, items:[...], posted, failed, notes}
     """
-    api = api or GitCode(config)
+    api = api or create_api(config)
     pr = api.pull(int(number))
     state = str(pr.get("state") or "").lower()
     if state not in {"open", "opened"}:
@@ -404,10 +412,9 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
         result["items"] = [{**plan, "status": "preview"} for plan in plans]
         return result
 
-    if not gitcode_token():
-        raise ValueError("缺少 GITCODE_TOKEN；提交评论需要带 pull_requests 写权限的 token")
+    if not token_present():
+        raise ValueError("缺少 GITCODE_TOKEN / GITHUB_TOKEN；提交评论需要该平台的写权限 token")
 
-    endpoint = f"/pulls/{int(number)}/comments"
     for index, plan in enumerate(plans):
         if index:
             time.sleep(max(0.0, delay))
@@ -419,17 +426,16 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
         try:
             response = None
             if plan["inline"]:
-                response = api.post(endpoint, {"body": plan["body"], "path": plan["path"],
-                                               "position": plan["position"], "commit_id": head_sha,
-                                               "position_type": "text"})
+                response = api.post_inline_comment(number, plan["body"], plan["path"],
+                                                   plan["position"], head_sha)
             else:
-                response = api.post(endpoint, {"body": plan["body"]})
+                response = api.post_general_comment(number, plan["body"])
         except RuntimeError as exc:
-            # 行号不在 diff（平台返回 400）时退回 PR 级评论，仍把目标位置写在正文里。
+            # 行号不在 diff（平台返回 400/422）时退回 PR 级评论，仍把目标位置写在正文里。
             if plan["inline"]:
                 fallback = (f"> 目标位置：`{plan['path']}:{plan['line']}`\n\n" + plan["body"])
                 try:
-                    response = api.post(endpoint, {"body": fallback})
+                    response = api.post_general_comment(number, fallback)
                     entry["inline"] = False
                     entry["body"] = fallback
                     notes.append(f"{plan['finding']} 行内评论被拒绝，已改为 PR 级评论（{exc}）")

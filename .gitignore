@@ -5,3 +5,9 @@ vendor/
 __pycache__/
 *.egg-info/
 .harness-bridge-token
+
+# 运行期项目注册表与导入项目的配置不入库（模板只保留 recsdk 示例）
+config/projects.json
+config/*.json
+!config/recsdk.json
+!config/recsdk-knowledge.json

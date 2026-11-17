@@ -1,4 +1,4 @@
-# 提交并推送本仓库到 GitHub（发布新版本用）。
+﻿# 提交并推送本仓库到 GitHub（发布新版本用）。
 #
 # 用法：
 #   .\scripts\publish.ps1 -Message "描述本次改动"

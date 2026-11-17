@@ -6,7 +6,16 @@ import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const core = await import(pathToFileURL(resolve(root, 'vendor/understand-anything/understand-anything-plugin/packages/core/dist/index.js')).href);
+const corePath = resolve(root, 'vendor/understand-anything/understand-anything-plugin/packages/core/dist/index.js');
+if (!existsSync(corePath)) {
+  // 源码安装后必须先运行 scripts/setup.ps1（克隆 pinned 依赖并构建 Understand core）。
+  console.error(
+    'Understand core 未构建：缺少 ' + corePath + '\n' +
+    '请先在控制器源码目录运行 scripts\\setup.ps1（需要 git、Node 22+、pnpm 与网络），' +
+    '或在「代码检视」页面点「初始化依赖」。');
+  process.exit(3);
+}
+const core = await import(pathToFileURL(corePath).href);
 const [requestPath, outputPath] = process.argv.slice(2);
 const request = JSON.parse(readFileSync(requestPath, 'utf8'));
 const configs = core.builtinLanguageConfigs.filter(c => ['python','cpp','c','typescript','javascript','go','rust','java'].includes(c.id));

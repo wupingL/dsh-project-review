@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from .backends import backend_checks, model_destination
 from .comments import post_findings
-from .common import ROOT, Config, read_json, run
+from .common import ROOT, UNDERSTAND_CORE, Config, read_json, run
 from .context import Context
 from .feature import Features
 from .gitcode import GitCode
@@ -24,8 +24,11 @@ def doctor(config, network=False):
     checks = {}
     for executable in ["git", "node"]:
         checks[executable] = shutil.which(executable) is not None
-    core = ROOT / "vendor/understand-anything/understand-anything-plugin/packages/core/dist/index.js"
-    checks["understand_core"] = core.is_file()
+    checks["understand_core"] = UNDERSTAND_CORE.is_file()
+    if not checks["understand_core"]:
+        errors["understand_core"] = (
+            "知识图谱依赖未初始化：缺少 vendor/understand-anything 的构建产物。"
+            "请运行 scripts\\setup.ps1（需要 git、Node 22+、pnpm 与网络），或在「代码检视」页面点「初始化依赖」。")
     checks["expert_skills"] = all((ROOT / "vendor/claude-skills/skills" / s / "SKILL.md").is_file()
                                    for s in ["spec-miner", "architecture-designer", "code-reviewer"])
     errors = {}

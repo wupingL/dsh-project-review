@@ -543,6 +543,12 @@ async function main() {
       && !/is not defined/.test(useHarness.body.error)),
       useHarness.body && useHarness.body.error);
 
+    // ---- 依赖初始化（源码安装后未运行 setup.ps1） ----------------------
+    const setupMissing = await callRoute(routes, '/recsdk-review/api/setup', 'POST', {});
+    check('缺少 setup.ps1 时初始化接口给出可读错误', Boolean(setupMissing.body
+      && setupMissing.body.ok === false && /setup\.ps1/.test(String(setupMissing.body.error || ''))),
+      setupMissing.body && String(setupMissing.body.error));
+
     const list = await callRoute(routes, '/recsdk-review/api/pulls?project=recsdk');
     check('GET /pulls?project 200', list.status === 200 && list.body && list.body.prs.length === 2);
 

@@ -10,7 +10,7 @@ import uuid
 from collections import deque
 from pathlib import Path
 from .backends import artifact_identity, create_model
-from .common import ROOT, atomic_json, digest, now, read_json, run
+from .common import ROOT, atomic_json, digest, now, read_json, require_understand_core, run
 from .git import Git
 from .model import DOMAIN_SCHEMA, GUARD, expert
 from .state import State
@@ -80,6 +80,7 @@ class Context:
         return prior_id
 
     def _sync(self, ref, *, fetch, semantic, publish, prior=None):
+        require_understand_core()
         self.git.initialize()
         if fetch:
             self.git.refresh()

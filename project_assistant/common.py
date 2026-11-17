@@ -10,6 +10,18 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
+UNDERSTAND_CORE = (ROOT / "vendor" / "understand-anything" / "understand-anything-plugin"
+                   / "packages" / "core" / "dist" / "index.js")
+
+
+def require_understand_core():
+    """知识图谱依赖（Understand core）必须已构建，否则给出可操作的错误。"""
+    if UNDERSTAND_CORE.is_file():
+        return
+    raise RuntimeError(
+        "知识图谱依赖未初始化：缺少 " + str(UNDERSTAND_CORE) + "。\n"
+        "请在控制器源码目录运行 scripts\\setup.ps1（需要 git、Node 22+、pnpm 与网络），"
+        "或在「代码检视」页面点「初始化依赖」。")
 
 
 def now():

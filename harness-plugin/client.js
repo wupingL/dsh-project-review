@@ -195,6 +195,12 @@ window.__ModuleLoader__.load({
       'project.removedPurged': '已移除项目并删除控制器数据',
       'project.keptLocal': '本地源码保留在：',
       'project.removeFailed': '移除项目失败：{message}',
+      'setup.title': '依赖未初始化',
+      'setup.hint': '检测到缺少知识图谱依赖（Understand core）。点击初始化会自动克隆 pinned 依赖、安装并构建（需要 git、Node 22+、pnpm 与网络），可能需要几分钟。',
+      'setup.action': '初始化依赖',
+      'setup.running': '初始化中…',
+      'setup.done': '依赖初始化完成',
+      'setup.failed': '依赖初始化失败：{message}',
       'knowledge.title': '知识库',
       'knowledge.status.missing': '未构建',
       'knowledge.status.stale': '有更新',
@@ -475,6 +481,12 @@ window.__ModuleLoader__.load({
       'project.removedPurged': 'Project removed and controller data deleted',
       'project.keptLocal': 'Local source kept at: ',
       'project.removeFailed': 'Removing the project failed: {message}',
+      'setup.title': 'Dependencies not initialised',
+      'setup.hint': 'The knowledge-graph dependency (Understand core) is missing. Initialise it to clone the pinned dependencies and build the core (needs git, Node 22+, pnpm and network); this can take a few minutes.',
+      'setup.action': 'Initialise dependencies',
+      'setup.running': 'Initialising…',
+      'setup.done': 'Dependencies initialised',
+      'setup.failed': 'Initialising dependencies failed: {message}',
       'knowledge.title': 'Knowledge',
       'knowledge.status.missing': 'Not built',
       'knowledge.status.stale': 'Out of date',
@@ -1252,6 +1264,15 @@ window.__ModuleLoader__.load({
 .rr-page .rr-remove-confirm-text { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .rr-page .rr-remove-purge { display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .rr-page .rr-remove-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.rr-page .rr-setup-banner {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--dsw-alias-border-l1);
+  border-left: 3px solid var(--rr-high, #e6a23c); border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.rr-page .rr-setup-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rr-page .rr-setup-title { font-weight: 600; font-size: 12.5px; }
+.rr-page .rr-setup-text { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .rr-page .rr-tag {
   flex: none;
   padding: 1px 6px;
@@ -2416,6 +2437,29 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function SetupBanner(props) {
+      const t = props.t;
+      const job = isObject(props.job) ? props.job : null;
+      const running = Boolean(job && job.status === 'running');
+      const progress = job && Array.isArray(job.progress) ? job.progress.slice(-6) : [];
+      return h('div', { className: 'rr-setup-banner', role: 'status' },
+        h('div', { className: 'rr-setup-main' },
+          h('div', { className: 'rr-setup-title' }, t('setup.title')),
+          h('div', { className: 'rr-setup-text' }, t('setup.hint')),
+          running && progress.length
+            ? h('div', { className: 'rr-knowledge-progress rr-review-progress' },
+                progress.map(function (line, index) {
+                  return h('div', { key: index, className: 'rr-knowledge-progress-line' }, line);
+                }))
+            : null
+        ),
+        h('button', {
+          type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm',
+          disabled: running, onClick: props.onSetup,
+        }, running ? t('setup.running') : t('setup.action'))
+      );
+    }
+
     async function deleteJSON(path) {
       let response;
       try {
@@ -3405,6 +3449,8 @@ window.__ModuleLoader__.load({
       const [stateFilter, setStateFilter] = React.useState('all');
       const [listPane, setListPane] = React.useState('list');
       const [health, setHealth] = React.useState(null);
+      const [healthTick, setHealthTick] = React.useState(0);
+      const [setupJob, setSetupJob] = React.useState(null);
 
       // 1) 项目列表：首屏决定落在项目总览还是工作区
       React.useEffect(function () {
@@ -3580,7 +3626,34 @@ window.__ModuleLoader__.load({
           active = false;
           controller.abort();
         };
-      }, []);
+      }, [healthTick]);
+
+      // 5b) 依赖初始化任务轮询
+      React.useEffect(function () {
+        if (!setupJob || setupJob.status !== 'running') return undefined;
+        let active = true;
+        const timer = setInterval(function () {
+          (async function () {
+            try {
+              const data = await fetchJSON(API_BASE + '/jobs/' + encodeURIComponent(setupJob.job_id), undefined);
+              if (!active || !isObject(data)) return;
+              setSetupJob(data);
+              if (data.status === 'done') {
+                setImportNotice(t('setup.done'));
+                setHealthTick(function (value) { return value + 1; });
+              } else if (data.status === 'error') {
+                setImportNotice(fill(t('setup.failed'), { message: asText(data.error, t('health.unknown')) }));
+              }
+            } catch (error) {
+              if (active) setImportNotice(fill(t('setup.failed'), { message: errorText(error) }));
+            }
+          })();
+        }, 1500);
+        return function () {
+          active = false;
+          clearInterval(timer);
+        };
+      }, [setupJob]);
 
       // 6) PR 详情
       React.useEffect(function () {
@@ -3732,6 +3805,18 @@ window.__ModuleLoader__.load({
         setKnowledgeNotice('');
         setKnowledgeTick(function (value) { return value + 1; });
         setProjectsReload(function (value) { return value + 1; });
+      }
+
+      async function startSetup() {
+        try {
+          const data = await postJSON(API_BASE + '/setup', {});
+          if (!isObject(data) || !data.job_id) {
+            throw new Error(asText(data && data.error, '') || 'setup failed');
+          }
+          setSetupJob({ job_id: data.job_id, status: 'running', progress: [] });
+        } catch (error) {
+          setImportNotice(fill(t('setup.failed'), { message: errorText(error) }));
+        }
       }
 
       async function startSync(mode) {
@@ -4014,6 +4099,9 @@ window.__ModuleLoader__.load({
               onSync: startSync,
               onToggleLogs: setLogsOpen,
             }),
+          health && isObject(health.checks) && health.checks.understand_core === false
+            ? h(SetupBanner, { t: t, job: setupJob, onSetup: startSetup })
+            : null,
           importNotice ? h('div', { className: 'rr-notice' }, importNotice) : null,
           h('div', { className: 'rr-body', 'data-pane': listPane },
             h('aside', { className: 'rr-listpane', 'aria-label': t('aria.prList') },

@@ -55,6 +55,7 @@ function resolveOptions(config) {
     // PR head 变化后自动重新审查（只针对已经审查过一次的 PR，不批量审查未审查列表）。
     autoReviewUpdates: value.autoReviewUpdates !== false,
     autoReviewPollMs: Number.isFinite(autoPoll) && autoPoll >= 1000 ? autoPoll : 120000,
+    powershell: typeof value.powershell === 'string' && value.powershell ? value.powershell : null,
   };
 }
 
@@ -1027,6 +1028,67 @@ function createService(options, hostBridge, modelBridge) {
     return { started };
   }
 
+  /** 初始化控制器依赖（克隆 pinned 依赖并构建 Understand core），后台任务。 */
+  function startSetup() {
+    const script = path.join(options.root, 'scripts', 'setup.ps1');
+    if (!existsSync(script)) {
+      throw new Error('控制器目录缺少 scripts\\setup.ps1：请把 bundle 的 projectRoot 指向仓库根目录');
+    }
+    const executable = options.powershell
+      || (process.platform === 'win32' ? 'powershell.exe' : 'pwsh');
+    const job = {
+      job_id: `job-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      status: 'running', started_at: new Date().toISOString(), finished_at: null,
+      progress: [], result: null, error: null, kind: 'setup',
+    };
+    let child;
+    try {
+      child = spawn(executable, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], {
+        cwd: options.root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      });
+    } catch (error) {
+      job.status = 'error';
+      job.error = `无法启动初始化脚本：${error && error.message ? error.message : String(error)}`;
+      job.finished_at = new Date().toISOString();
+      return job;
+    }
+    const push = (chunk) => {
+      for (const line of String(chunk).split(/\r?\n/)) {
+        const text = line.trim();
+        if (!text) continue;
+        job.progress.push(text);
+        if (job.progress.length > 200) job.progress.splice(0, job.progress.length - 200);
+      }
+    };
+    child.stdout.on('data', push);
+    child.stderr.on('data', push);
+    child.on('error', (error) => {
+      job.status = 'error';
+      job.error = `无法启动初始化脚本：${error && error.message ? error.message : String(error)}`;
+      job.finished_at = new Date().toISOString();
+    });
+    child.on('close', (code) => {
+      job.finished_at = new Date().toISOString();
+      if (job.status === 'error') return;
+      if (code === 0) {
+        job.status = 'done';
+        job.result = { ok: true };
+        memo.clear();
+      } else {
+        job.status = 'error';
+        const tail = job.progress.slice(-3).join(' | ');
+        job.error = `初始化依赖失败（退出码 ${code}）${tail ? '：' + tail : '；请检查 pnpm/git 输出'}`;
+      }
+    });
+    jobs.set(job.job_id, job);
+    if (jobs.size > 30) {
+      const oldest = [...jobs.keys()].slice(0, jobs.size - 30);
+      for (const key of oldest) jobs.delete(key);
+    }
+    return job;
+  }
+
   async function harnessModels(providerFilter) {
     if (!hostBridge) return { available: false, providers: [], reason: '宿主桥不可用' };
     const data = await hostBridge.harnessModels();
@@ -1180,7 +1242,7 @@ function createService(options, hostBridge, modelBridge) {
     projects, branches, knowledge, probe, importProject, removeProject, startSync, startReview, job,
     modelShow, modelSet, modelSetCredential, modelApply, modelTest, harnessModels,
     useHarness, bridgeChat, bridgeModels,
-    listPulls, showPull, health, recoverReviews, autoReviewTick, postComments,
+    listPulls, showPull, health, recoverReviews, autoReviewTick, postComments, startSetup,
   };
 }
 
@@ -1274,6 +1336,17 @@ function createRouteHandler(options, service) {
         try {
           const payload = await readJsonBody(req);
           json(res, 200, await service.modelSet(payload));
+        } catch (error) {
+          json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
+        }
+        return;
+      }
+
+      // ---- 依赖初始化（源码安装后必须先运行 setup.ps1） ------------------
+      if (pathname === `${ROUTE_PREFIX}/setup` && method === 'POST') {
+        try {
+          const job = service.startSetup();
+          json(res, 202, { ok: true, job_id: job.job_id });
         } catch (error) {
           json(res, 200, { ok: false, error: error && error.message ? error.message : String(error) });
         }

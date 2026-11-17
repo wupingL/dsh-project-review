@@ -1,4 +1,4 @@
-# RecSDK 代码检视（DSH 插件 bundle）
+﻿# RecSDK 代码检视（DSH 插件 bundle）
 
 把 `project-assistant` 接入 DeepSeek Harness Web UI：侧栏「代码检视」整页。页面是一个项目控制台：
 
@@ -249,8 +249,12 @@ plugin_manager remove_bundle target = "@local/recsdk-review"
 
 ## 验证
 
+> **源码安装后必须先初始化依赖**：`scripts\setup.ps1`（或在页面点「初始化依赖」）。否则知识图谱/审查会报
+> `Cannot find module ... vendor\understand-anything\...\dist\index.js`——现在控制器会预检并给出这条可操作提示，
+> 页面也会显示「依赖未初始化」横幅与初始化按钮。
+
 ```powershell
-# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，66 项检查
+# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，67 项检查
 node scripts\verify_harness_plugin.mjs
 
 # 2) 控制器只读命令

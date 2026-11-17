@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import tempfile
@@ -29,6 +29,27 @@ def make_repo(root: Path, branches=("main",), files=None):
     run(["git", "-C", str(root), "remote", "add", "origin",
          "https://gitcode.com/demo/" + root.name + ".git"])
     return run(["git", "-C", str(root), "rev-parse", "HEAD"]).strip()
+
+
+class UnderstandCorePreflightTests(unittest.TestCase):
+    """源码安装后未运行 setup.ps1 时，必须给出可操作的错误而不是 node 堆栈。"""
+
+    def test_missing_core_raises_actionable_error(self):
+        from project_assistant import common
+        with patch.object(common, "UNDERSTAND_CORE", Path("Z:/definitely/missing/index.js")):
+            with self.assertRaises(RuntimeError) as caught:
+                common.require_understand_core()
+        message = str(caught.exception)
+        self.assertIn("setup.ps1", message)
+        self.assertIn("初始化依赖", message)
+
+    def test_existing_core_passes(self):
+        from project_assistant import common
+        with tempfile.TemporaryDirectory() as tmp:
+            core = Path(tmp) / "index.js"
+            core.write_text("export {};", encoding="utf-8")
+            with patch.object(common, "UNDERSTAND_CORE", core):
+                common.require_understand_core()
 
 
 class ProjectRegistryTests(unittest.TestCase):

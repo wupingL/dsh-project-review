@@ -77,6 +77,23 @@ git pull
 - `GITCODE_TOKEN` 与模型凭据只从环境/凭据文件读取，不写入配置、日志、报告；评论接口 URL 不回显 token。
 - `data/`（镜像、快照、报告、SQLite、凭据文件）、`vendor/`、`.venv/`、`.harness-bridge-token` 均已 gitignore，不会提交到仓库。
 
+## 常见问题
+
+**`Cannot find module ... vendor\understand-anything\...\dist\index.js`（node ERR_MODULE_NOT_FOUND）**
+
+源码安装后还没有初始化依赖。运行 `scripts\setup.ps1`（需要 git、Node 22+、pnpm 与网络），或在「代码检视」页面点「初始化依赖」按钮。
+插件的知识库/审查会先做预检并给出这条提示，而不是抛 node 堆栈。
+
+**页面显示「数据源降级：GitCode HTTP 404」**
+
+说明项目是 GitHub 仓库但控制器拿不到 token（私有仓库），或仓库地址/权限有误。设置 `GITHUB_TOKEN`/`GH_TOKEN`，
+或确认本机 git 凭据助手已登录 GitHub（控制器会自动回退 `git credential fill`）。
+
+**审查一直「进行中」**
+
+Harness 重启会杀掉正在跑的 CLI 子进程；插件启动时会把遗留任务标记为失败并给出「重试审查」，也可以点「重试审查」或
+`python -m project_assistant.cli review recover --fail-running`。
+
 ## 仓库维护：发布 / 同步更新
 
 本仓库同时是插件源码仓库（<https://github.com/wupingL/dsh-project-review>）。发布新版本：

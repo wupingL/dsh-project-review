@@ -18,6 +18,7 @@ from .projects import (import_project, knowledge_status, list_projects, model_ap
                        model_set, model_set_credential, model_show, model_test, probe,
                        project_branches, remove_project, resolve_config, sync_knowledge)
 from .review import Reviews
+from .state import StateBusy
 
 
 def doctor(config, network=False):
@@ -265,7 +266,7 @@ def main(argv=None):
                             count = (reviews.state.interrupt_running(
                                 "审查进程已中断（控制器或 Harness 重启后未恢复），请重新开始审查。")
                                 if args.fail_running else reviews.state.recover())
-                    except OSError:
+                    except (OSError, StateBusy):
                         skipped, count = True, 0
                     result = {"recovered": count, "skipped": skipped}
                 elif args.action == "status":
@@ -284,20 +285,23 @@ def main(argv=None):
                         result = reviews.replay(args.branch, args.commit, structural_only=args.structural_only)
                         print(json.dumps(result, ensure_ascii=False, indent=2))
                         return 0
-                    with reviews.state.lock("watch"):
-                        reviews.state.recover()
-                        reviews.git.refresh()
-                        pr = reviews.api.pull(args.pr)
-                        if not reviews.api.active(pr):
-                            raise ValueError("PR must be open and not draft")
-                        reviews.observe([pr], force=True)
-                        job = reviews.job(pr)
-                        row = reviews.state.db.execute("SELECT status,report FROM jobs WHERE id=?", (job["fingerprint"],)).fetchone()
-                        if row["status"] == "done":
-                            result = {"report": row["report"], "reused": True}
-                        else:
-                            # Explicit run selects this PR, not a different queued job.
-                            result = reviews.process_one(job["fingerprint"], mode=args.mode)
+                    try:
+                        with reviews.state.lock("watch"):
+                            reviews.state.recover()
+                            reviews.git.refresh()
+                            pr = reviews.api.pull(args.pr)
+                            if not reviews.api.active(pr):
+                                raise ValueError("PR must be open and not draft")
+                            reviews.observe([pr], force=True)
+                            job = reviews.job(pr)
+                            row = reviews.state.db.execute("SELECT status,report FROM jobs WHERE id=?", (job["fingerprint"],)).fetchone()
+                            if row["status"] == "done":
+                                result = {"report": row["report"], "reused": True}
+                            else:
+                                # Explicit run selects this PR, not a different queued job.
+                                result = reviews.process_one(job["fingerprint"], mode=args.mode)
+                    except StateBusy as exc:
+                        raise ValueError(f"该 PR 正在审查中或另一个控制器任务正在运行：{exc}") from None
         else:
             features = Features(config)
             if args.action == "design":

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 import tempfile
@@ -259,6 +259,28 @@ class StaleJobTests(unittest.TestCase):
     def test_interrupt_leaves_other_states_alone(self):
         self.insert_job(status="pending")
         self.assertEqual(self.state.interrupt_running("x"), 0)
+
+
+class StateBusyTests(unittest.TestCase):
+    """并发审查/同步时必须给出可读提示，而不是裸的 Permission denied。"""
+
+    def test_second_lock_reports_busy(self):
+        from project_assistant.state import State, StateBusy
+        with tempfile.TemporaryDirectory() as tmp:
+            state = State(Path(tmp) / "state.sqlite")
+            try:
+                with state.lock("watch"):
+                    other = State(Path(tmp) / "state.sqlite")
+                    try:
+                        with self.assertRaises(StateBusy) as caught:
+                            with other.lock("watch"):
+                                pass
+                    finally:
+                        other.close()
+            finally:
+                state.close()
+            self.assertIn("正在执行", str(caught.exception))
+            self.assertIn("稍后重试", str(caught.exception))
 
 
 if __name__ == "__main__":

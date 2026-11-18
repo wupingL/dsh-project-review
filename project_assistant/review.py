@@ -244,10 +244,28 @@ class Reviews:
                 "evidence": [e for e in (evidence if isinstance(evidence, list) else [])
                              if isinstance(e, dict)][:5],
             }
+        # 保留上一版的完整字段，供页面继续展示/勾选/提交（只有已修复的才从列表消失）。
+        previous_all = previous["review"].get("findings")
+        full_by_id = {}
+        for index, finding in enumerate((previous_all if isinstance(previous_all, list) else [])[:30],
+                                        start=1):
+            if isinstance(finding, dict):
+                full_by_id[f"P{index}"] = finding
         items = []
         for item in previous_findings:
             update = reported.get(item["id"], {"status": "uncertain", "reason": "", "evidence": []})
-            items.append({**item, **update})
+            base = dict(full_by_id.get(item["id"]) or {})
+            merged = {
+                **base,
+                "id": item["id"],
+                "title": item.get("title") or base.get("title") or "",
+                "severity": item.get("severity") or base.get("severity"),
+                "evidence": update.get("evidence") or base.get("evidence") or [],
+                "status": update["status"],
+                "reason": update["reason"],
+                "origin": "previous",
+            }
+            items.append(merged)
         fixed = [item for item in items if item["status"] == "fixed"]
         open_items = [item for item in items if item["status"] in {"partially_fixed", "still_present"}]
         uncertain = [item for item in items if item["status"] == "uncertain"]
@@ -393,8 +411,9 @@ class Reviews:
         self.validate_findings(result, [head_workspace, base_workspace, before_workspace])
         comparison = self.compare_previous(previous, previous_findings, result)
         if comparison:
-            # 报告的主体只保留本轮新发现；上一版的结论在 comparison 中逐条给出状态。
+            # 本轮新发现进 findings；上一版仍未解决的进 open_findings（页面仍可勾选提交）。
             result["findings"] = comparison["new"]
+            result["open_findings"] = comparison["open"]
             progress(f"pr #{job['number']}：对比上一版（已修复 {len(comparison['fixed'])}，"
                      f"仍存在 {len(comparison['open'])}，新增 {len(comparison['new'])}）")
         if discussion:
@@ -508,6 +527,16 @@ class Reviews:
             lines += ["在本次已覆盖证据中未确认缺陷；这不代表系统功能或性能已通过验证。", ""]
         if comparison:
             lines += Reviews.comparison_lines(comparison)
+        open_findings = result.get("open_findings")
+        if isinstance(open_findings, list) and open_findings:
+            lines += ["## 上一轮仍未解决的问题", ""]
+            for item in open_findings:
+                label = {"still_present": "仍存在", "partially_fixed": "部分修复",
+                         "uncertain": "无法确认"}.get(item.get("status"), "无法确认")
+                reason = brief(item.get("reason"), 200)
+                lines.append(f"- `{item.get('id')}` [{label}] {item.get('title')}"
+                             + (f"（{reason}）" if reason else ""))
+            lines.append("")
         checks = result.get("existing_comment_checks")
         if isinstance(checks, list) and checks:
             labels = {"addressed": "已处理/已解决", "still_open": "仍未处理", "unclear": "无法确认"}

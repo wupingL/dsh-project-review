@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import json
@@ -33,9 +33,10 @@ REVIEW_KEYS = {
 SHOW_KEYS = {"generated_at", "source", "source_error", "pr", "files", "review", "job"}
 SHOW_REVIEW_KEYS = REVIEW_KEYS | {
     "metadata", "intent", "summary", "risks_to_verify", "affected_flows",
-    "verification_plan", "comparison", "posted_comments", "existing_comment_checks", "stale_message",
+    "verification_plan", "comparison", "posted_comments", "existing_comment_checks",
+    "open_findings", "stale_message",
 }
-FINDING_KEYS = {"title", "severity", "trigger", "system_function", "consequence",
+FINDING_KEYS = {"origin", "title", "severity", "trigger", "system_function", "consequence",
                 "evidence", "verification", "confidence", "existing_comment"}
 EVIDENCE_KEYS = {"path", "line", "reason"}
 JOB_KEYS = {"status", "attempts", "error", "updated"}
@@ -179,7 +180,15 @@ class InspectFixture(unittest.TestCase):
         }
         if metadata_extra:
             metadata.update(metadata_extra)
+        open_finding = {
+            "title": "上一轮未解决", "severity": "high", "status": "still_present",
+            "reason": "未修复", "origin": "previous",
+            "evidence": [{"path": "training/a.py", "line": 5, "reason": "证据"}],
+            "trigger": "t", "system_function": "s", "consequence": "c",
+            "verification": "v", "confidence": "high",
+        }
         review = {
+            "open_findings": [open_finding],
             "intent": f"意图 {number}",
             "summary": f"摘要 {number}",
             "findings": findings,
@@ -500,6 +509,9 @@ class ShowTests(InspectFixture):
         self.assertEqual([item["finding"] for item in review["posted_comments"]], ["F1"])
         self.assertTrue(review["posted_comments"][0]["inline"])
         self.assertEqual(review["existing_comment_checks"], [])
+        self.assertEqual([item["title"] for item in review["open_findings"]], ["上一轮未解决"])
+        self.assertEqual(review["open_findings"][0]["status"], "still_present")
+        self.assertEqual(review["open_findings"][0]["origin"], "previous")
         self.assertIsNone(review["findings"][0].get("existing_comment"))
         self.assertEqual(review["fingerprint"], "meta-fp-301")
         self.assertEqual(review["metadata"]["changed_files"], ["training/a.py", "cust_op/b.cpp"])

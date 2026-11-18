@@ -512,6 +512,7 @@ def _finding_cards(value):
                     "reason": _text(item.get("reason")) or "",
                 })
         result.append({
+            "origin": _text(finding.get("origin")) or "new",
             "title": _text(finding.get("title")) or "",
             "severity": _text(finding.get("severity")) or "",
             "trigger": _text(finding.get("trigger")) or "",
@@ -572,16 +573,18 @@ def _stale_message(report):
 
 def _extended_review(view, report, metadata, review):
     value = dict(view)
+    comparison = _comparison(report)
     value.update({
         "metadata": metadata,
         "intent": _text(review.get("intent")),
         "summary": _text(review.get("summary")),
         "findings": _finding_cards(review.get("findings")),
+        "open_findings": _open_finding_cards(_open_findings(review, comparison)),
         "risks_to_verify": _strings(review.get("risks_to_verify")),
         "coverage_gaps": _strings(review.get("coverage_gaps")),
         "affected_flows": _strings(review.get("affected_flows")),
         "verification_plan": _strings(review.get("verification_plan")),
-        "comparison": _comparison(report),
+        "comparison": comparison,
         "posted_comments": _posted_comments(report),
         "existing_comment_checks": _comment_checks(review.get("existing_comment_checks")),
         "stale_message": _stale_message(report),
@@ -609,6 +612,56 @@ def _posted_comments(report):
             "at": _text(entry.get("at")),
         })
     return result
+
+
+def _open_findings(review, comparison):
+    """上一轮未解决的意见；兼容旧报告（只有 comparison.json，没有 open_findings 字段）。"""
+    direct = review.get("open_findings")
+    if isinstance(direct, list) and direct:
+        return direct
+    if not isinstance(comparison, dict):
+        return []
+    previous_findings = []
+    previous_report = comparison.get("previous_report")
+    if previous_report:
+        data = _load_json(Path(str(previous_report)) / "review.json")
+        if isinstance(data, dict) and isinstance(data.get("review"), dict):
+            items = data["review"].get("findings")
+            previous_findings = items if isinstance(items, list) else []
+    by_id = {}
+    for index, finding in enumerate(previous_findings[:30], start=1):
+        if isinstance(finding, dict):
+            by_id[f"P{index}"] = finding
+    merged_items = []
+    for item in comparison.get("open") or []:
+        if not isinstance(item, dict):
+            continue
+        base = dict(by_id.get(str(item.get("id"))) or {})
+        merged_items.append({
+            **base,
+            "id": item.get("id"),
+            "title": item.get("title") or base.get("title") or "",
+            "severity": item.get("severity") or base.get("severity"),
+            "evidence": item.get("evidence") or base.get("evidence") or [],
+            "status": item.get("status"),
+            "reason": item.get("reason"),
+            "origin": "previous",
+        })
+    return merged_items
+
+
+def _open_finding_cards(value):
+    """上一轮仍未解决的问题：完整字段 + 复核状态，页面仍可勾选/提交评论。"""
+    items = value if isinstance(value, list) else []
+    cards = _finding_cards(items)
+    for card, item in zip(cards, items):
+        if not isinstance(item, dict):
+            continue
+        card["origin"] = "previous"
+        card["status"] = _text(item.get("status"))
+        card["reason"] = _text(item.get("reason"))
+        card["previous_id"] = _text(item.get("id"))
+    return cards
 
 
 def _comparison(report):

@@ -1203,7 +1203,7 @@ function createService(options, hostBridge, modelBridge) {
     if (!Number.isInteger(numeric) || numeric <= 0) throw new Error('非法的 PR 编号');
     const body = payload && typeof payload === 'object' ? payload : {};
     const findings = Array.isArray(body.findings)
-      ? body.findings.map((item) => String(item)).filter((item) => /^F?\d+$/i.test(item)).slice(0, 10)
+      ? body.findings.map((item) => String(item)).filter((item) => /^[FP]?\d+$/i.test(item)).slice(0, 10)
       : [];
     if (!findings.length) throw new Error('请选择要评论的审查意见');
     const mode = ['issue', 'suggestion', 'question'].includes(body.mode) ? body.mode : 'issue';

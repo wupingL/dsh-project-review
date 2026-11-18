@@ -137,11 +137,12 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
   每个项目同时只跑一个，同一 PR 10 分钟内不会重复触发。
 - **与上一版对比**：重新审查时控制器会读取同一 PR 上一份报告，把上一版结论编号为 `P1…Pn` 交给模型逐条复核，
   新报告里给出 `comparison.json`：
-  - `fixed`：已修复（附新证据/说明）
-  - `open`：仍存在或部分修复
+  - `fixed`：已修复（从列表消失）
+  - `open`：仍存在或部分修复 → 同时写入报告的 `open_findings`，页面在「上一轮仍未解决」区块继续展示，
+    仍可勾选、评论、提交（编号 `P1…Pn`）；只有 confirmed 已修复的问题才会消失
   - `uncertain`：无法确认（模型漏答时也落到这里）
   - `new`：本轮新发现（同时写入报告的「确认的问题」）
-  报告 `review.md` 增加「与上一版审查的对比」，页面详情也有对应区块；`review.json.metadata` 记录
+  报告 `review.md` 增加「与上一版审查的对比」与「上一轮仍未解决的问题」，页面详情也有对应区块；`review.json.metadata` 记录
   `previous_head_sha` / `previous_report` 以便追溯。
 - 临时手工触发：`review run --pr <n> --mode deep`（强制完整语义）。
 

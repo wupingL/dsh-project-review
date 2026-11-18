@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from project_assistant.comments import (FOOTER, FOOTER_EN, _finding_key, build_comment,
                                        find_overlapping_comment, finding_id, localize_findings,
-                                       normalize_comments, parse_id, plan_comments, post_findings,
-                                       posted_comments, resolve_anchor)
+                                       normalize_comments, parse_id, parse_identifier, plan_comments,
+                                       post_findings, posted_comments, resolve_anchor)
 from project_assistant.common import Config, atomic_json, run
 from project_assistant.gitcode import GitCode
 
@@ -393,6 +393,62 @@ class EditedCommentPostingTests(unittest.TestCase):
         sent = api.calls[0]["body"]
         self.assertTrue(sent.startswith("Hand-written English comment"))
         self.assertIn(FOOTER_EN, sent)
+
+
+class OpenFindingCommentTests(unittest.TestCase):
+    """上一轮未解决的问题（P1..）必须仍可勾选并提交评论。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        atomic_json(root / "config.json", {"name": "demo", "repo_url": "https://gitcode.com/demo/repo",
+                                           "branches": ["main"], "state_dir": "state"})
+        self.config = Config(root / "config.json")
+        self.folder = self.config.repo_state / "reports" / "440" / "fp"
+        atomic_json(self.folder / "review.json", {"metadata": {"head_sha": HEAD}, "review": {}})
+        self.pr = {"state": "open", "head": {"sha": HEAD}, "base": {"sha": BASE},
+                   "source_branch": "feature", "source_git_url": "https://gitcode.com/demo/repo"}
+
+    def report(self):
+        open_finding = {"title": "上一轮未解决的问题", "severity": "high", "trigger": "触发",
+                        "system_function": "功能", "consequence": "后果", "confidence": "high",
+                        "evidence": [{"path": "src/b.py", "line": 9, "reason": "未修复"}],
+                        "verification": "验证", "status": "still_present", "reason": "代码未改动",
+                        "origin": "previous"}
+        review = {"status": "current", "findings": findings(), "open_findings": [open_finding],
+                  "report_dir": str(self.folder)}
+        return ({"review": review}, review, {"head_sha": HEAD})
+
+    def test_identifiers_accept_new_and_previous(self):
+        self.assertEqual(parse_identifier("F2"), "F2")
+        self.assertEqual(parse_identifier("P1"), "P1")
+        self.assertEqual(parse_identifier("3"), "F3")
+        self.assertIsNone(parse_identifier("X"))
+
+    def test_plan_includes_previous_findings(self):
+        plans, notes = plan_comments(
+            findings(), {"src/b.py": {9}}, ["P1", "F1"],
+            previous_findings=[{"title": "上一轮未解决", "severity": "high",
+                              "evidence": [{"path": "src/b.py", "line": 9, "reason": "未修复"}]}])
+        self.assertEqual([plan["finding"] for plan in plans], ["P1", "F1"])
+        self.assertEqual(plans[0]["origin"], "previous")
+
+    def test_preview_and_post_previous_finding(self):
+        api = FakeApi(self.pr)
+        with patch.dict(os.environ, {"GITCODE_TOKEN": "test-token"}):
+            preview = post_findings(self.config, 440, ["P1"], api=api,
+                                    git=FakeGit({"src/b.py": {9}}), report=self.report())
+        self.assertEqual([item["finding"] for item in preview["items"]], ["P1"])
+        self.assertIn("上一轮未解决的问题", preview["items"][0]["body"])
+
+        api2 = FakeApi(self.pr)
+        with patch.dict(os.environ, {"GITCODE_TOKEN": "test-token"}):
+            posted = post_findings(self.config, 440, ["P1"], api=api2,
+                                   git=FakeGit({"src/b.py": {9}}), report=self.report(),
+                                   dry_run=False, delay=0)
+        self.assertEqual(posted["posted"], 1)
+        self.assertEqual(api2.calls[0]["path"], "src/b.py")
 
 
 class AddedLineTests(unittest.TestCase):

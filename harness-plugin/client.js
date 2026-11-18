@@ -99,6 +99,8 @@ window.__ModuleLoader__.load({
       'comment.lang.en': '纯英文',
       'comment.editHint': '可直接编辑正文；确认时按编辑后的内容提交',
       'comment.emptyBody': '评论正文不能为空',
+      'review.openHeading': '上一轮仍未解决',
+      'review.openHint': '这些问题上一轮已提出且仍未修复，可继续勾选并提交评论；已修复的不会出现在这里。',
       'comment.submit': '提交评论到 PR',
       'comment.hint': '勾选意见后先预览，再确认提交到 PR 对应代码处',
       'comment.posting': '提交中…',
@@ -116,6 +118,7 @@ window.__ModuleLoader__.load({
       'comment.existingRelatedBadge': '可能相关评论',
       'discussion.title': '已有评论处理情况',
       'discussion.addressed': '已处理',
+      'comparison.partial': '部分修复',
       'discussion.open': '仍未处理',
       'discussion.unclear': '无法确认',
       'review.modelRequired': '模型路由未就绪，无法执行审查（请到「模型配置」使用 Harness 模型）',
@@ -390,6 +393,8 @@ window.__ModuleLoader__.load({
       'comment.lang.en': 'English',
       'comment.editHint': 'Edit any comment before posting; the edited text is what gets submitted',
       'comment.emptyBody': 'A comment body cannot be empty',
+      'review.openHeading': 'Still open from the last review',
+      'review.openHint': 'These were raised before and are not fixed yet; you can still select and comment on them. Fixed issues drop off this list.',
       'comment.submit': 'Post to PR',
       'comment.hint': 'Select findings, preview the comments, then confirm to post them at the matching code lines',
       'comment.posting': 'Posting…',
@@ -407,6 +412,7 @@ window.__ModuleLoader__.load({
       'comment.existingRelatedBadge': 'Related comment',
       'discussion.title': 'Existing comments',
       'discussion.addressed': 'Handled',
+      'comparison.partial': 'Partially fixed',
       'discussion.open': 'Still open',
       'discussion.unclear': 'Unclear',
       'review.modelRequired': 'Model route is not ready (open Model route and use the Harness model)',
@@ -1284,6 +1290,8 @@ window.__ModuleLoader__.load({
 .rr-page .rr-setup-title { font-weight: 600; font-size: 12.5px; }
 .rr-page .rr-setup-text { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .rr-page .rr-comment-edit-hint { font-size: 11px; margin: 2px 0 6px; }
+.rr-page .rr-open-hint { font-size: 11px; margin-bottom: 6px; }
+.rr-page .rr-open-reason { font-size: 11.5px; margin: 4px 0; }
 .rr-page .rr-comment-edit {
   width: 100%; box-sizing: border-box; resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -2186,7 +2194,9 @@ window.__ModuleLoader__.load({
       (Array.isArray(review.posted_comments) ? review.posted_comments : []).forEach(function (item) {
         if (isObject(item) && item.finding) postedById[String(item.finding)] = item;
       });
-      const findingIds = findings.map(function (_, index) { return 'F' + (index + 1); });
+      const openFindings = Array.isArray(review.open_findings) ? review.open_findings : [];
+      const findingIds = findings.map(function (_, index) { return 'F' + (index + 1); })
+        .concat(openFindings.map(function (_, index) { return 'P' + (index + 1); }));
       const selectedIds = findingIds.filter(function (id) { return Boolean(selected[id]) && !postedById[id]; });
       const commentable = Boolean(props.prNumber && props.projectId && props.commentEnabled !== false
         && kind === 'current');
@@ -2412,6 +2422,66 @@ window.__ModuleLoader__.load({
             h('div', { className: 'rr-muted' }, fill(t('comment.resultSummary'),
               { posted: numberOr(commentResult.posted, 0), failed: numberOr(commentResult.failed, 0) }))) : null
         ) : null,
+        openFindings.length
+          ? h('div', { className: 'rr-findings rr-open-findings' },
+              h('div', { className: 'rr-findings-head' },
+                h('h3', { className: 'rr-findings-title' }, t('review.openHeading')),
+                h('span', { className: 'rr-muted' }, String(openFindings.length))
+              ),
+              h('div', { className: 'rr-muted rr-open-hint' }, t('review.openHint')),
+              openFindings.map(function (finding, index) {
+                const id = 'P' + (index + 1);
+                const posted = postedById[id];
+                const title = asText(finding.title, t('finding.untitled'));
+                const statusLabel = {
+                  still_present: t('discussion.open'),
+                  partially_fixed: t('comparison.partial'),
+                  uncertain: t('discussion.unclear'),
+                }[finding.status] || t('discussion.unclear');
+                const evidence = Array.isArray(finding.evidence) ? finding.evidence : [];
+                const evidenceEntries = evidence.map(function (entry) {
+                  const path = isObject(entry) ? asText(entry.path, '') : asText(entry, '');
+                  const line = isObject(entry) && entry.line !== null && entry.line !== undefined ? String(entry.line) : '';
+                  const reason = isObject(entry) ? asText(entry.reason, '') : '';
+                  return { path: path, line: line, reason: reason };
+                }).filter(function (entry) { return entry.path || entry.reason; });
+                return h('article', { key: id, className: 'rr-finding rr-open-finding' },
+                  h('div', { className: 'rr-finding-head' },
+                    canSelect && !posted
+                      ? h('input', {
+                          type: 'checkbox',
+                          className: 'rr-finding-check',
+                          checked: Boolean(selected[id]),
+                          onChange: function () { toggleFinding(id); },
+                          title: t('comment.select'),
+                          'aria-label': t('comment.select') + ' ' + id,
+                        })
+                      : null,
+                    h('div', { className: 'rr-finding-title' }, id + ' · ' + title),
+                    h('div', { className: 'rr-finding-tags' },
+                      h('span', { className: 'rr-badge rr-sev-badge' }, t('severity.' + normalizeSeverity(finding.severity))),
+                      h('span', { className: 'rr-badge rr-open-badge' }, statusLabel),
+                      posted
+                        ? h('span', { className: 'rr-badge rr-posted-badge' },
+                            t('comment.postedBadge') + ' · ' + (posted.inline ? t('comment.inline') : t('comment.general')))
+                        : null
+                    )
+                  ),
+                  finding.reason ? h('div', { className: 'rr-muted rr-open-reason' }, asText(finding.reason, '')) : null,
+                  evidenceEntries.length > 0 ? h('div', { className: 'rr-evidence' },
+                    h('div', { className: 'rr-evidence-label' }, t('finding.evidence')),
+                    evidenceEntries.map(function (entry, evidenceIndex) {
+                      const displayPath = entry.path + (entry.line ? ':' + entry.line : '');
+                      return h('div', { key: evidenceIndex, className: 'rr-evidence-item' },
+                        entry.path ? h('code', { className: 'rr-evidence-path' }, displayPath) : null,
+                        entry.reason ? h('span', { className: 'rr-evidence-reason' }, entry.reason) : null
+                      );
+                    })
+                  ) : null
+                );
+              })
+            )
+          : null,
         h(ComparisonBlock, { comparison: review && review.comparison, t: t }),
         (Array.isArray(review.existing_comment_checks) && review.existing_comment_checks.length)
           ? h('div', { className: 'rr-list-block rr-discussion' },

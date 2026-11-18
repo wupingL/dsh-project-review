@@ -50,6 +50,21 @@ def parse_id(value):
     return number if number >= 1 else None
 
 
+def parse_identifier(value):
+    """F<n> = 本轮新发现；P<n> = 上一轮仍未解决。裸数字按 F 处理。"""
+    text = str(value or "").strip().upper()
+    if not text:
+        return None
+    prefix = text[0] if text[0] in {"F", "P"} else "F"
+    number = text[1:] if text[0] in {"F", "P"} else text
+    if not number.isdigit():
+        return None
+    index = int(number)
+    if index < 1:
+        return None
+    return f"{prefix}{index}"
+
+
 def _clip(value, limit):
     text = str(value or "").strip()
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -357,25 +372,34 @@ def resolve_anchor(added, line, window=ANCHOR_WINDOW):
     return nearest if abs(nearest - line) <= window else None
 
 
-def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh", bodies=None):
+def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh", bodies=None,
+                  previous_findings=None):
     """生成待评论计划（纯函数，不做网络 IO）。
 
     ``bodies``：{finding_id: text}，来自页面预览时的手动编辑；提供时按编辑后的正文提交。
+    ``previous_findings``：上一轮仍未解决的意见（P1..Pn），同样可勾选/提交。
     """
     plans = []
     notes = []
     bodies = bodies if isinstance(bodies, dict) else {}
+    catalog = {}
+    for index, finding in enumerate(findings if isinstance(findings, list) else [], start=1):
+        if isinstance(finding, dict):
+            catalog[f"F{index}"] = finding
+    for index, finding in enumerate(previous_findings if isinstance(previous_findings, list) else [],
+                                    start=1):
+        if isinstance(finding, dict):
+            catalog[f"P{index}"] = finding
     for raw in selected_ids:
-        index = parse_id(raw)
-        if index is None or index > len(findings):
+        identifier = parse_identifier(raw)
+        finding = catalog.get(identifier) if identifier else None
+        if finding is None:
             notes.append(f"忽略未知意见编号 {raw}")
             continue
-        finding = findings[index - 1]
         evidence = _evidence(finding) or {}
         path = evidence.get("path") or ""
         line = evidence.get("line") or 0
         position = resolve_anchor(added_by_path.get(path, set()), line) if path else None
-        identifier = finding_id(index)
         edited = str(bodies.get(identifier) or "").strip()
         body = edited or build_comment(finding, mode, lang)
         inline = bool(position) and bool(path)
@@ -398,8 +422,9 @@ def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh"
         if footer not in body:
             body = body.rstrip() + "\n\n" + footer
         plans.append({
-            "finding": finding_id(index),
-            "index": index,
+            "finding": identifier,
+            "index": int(identifier[1:]),
+            "origin": "previous" if identifier.startswith("P") else "new",
             "title": _clip(finding.get("title"), 200),
             "severity": finding.get("severity"),
             "path": path,
@@ -509,7 +534,8 @@ def post_findings(config, number, selected_ids, *, mode="issue", lang="zh", dry_
     if reviewed and reviewed != head_sha:
         raise ValueError(f"报告基于旧提交（{reviewed[:8]}），当前 head 为 {head_sha[:8]}；请先重新审查")
     findings = review.get("findings") if isinstance(review.get("findings"), list) else []
-    if not findings:
+    open_findings = review.get("open_findings") if isinstance(review.get("open_findings"), list) else []
+    if not findings and not open_findings:
         raise ValueError("报告中没有可提交的审查意见")
     if len(selected_ids) > MAX_SELECTED:
         raise ValueError(f"一次最多提交 {MAX_SELECTED} 条评论")
@@ -520,7 +546,7 @@ def post_findings(config, number, selected_ids, *, mode="issue", lang="zh", dry_
     selected = []
     skipped = []
     for raw in selected_ids:
-        identifier = finding_id(parse_id(raw)) if parse_id(raw) else None
+        identifier = parse_identifier(raw)
         if identifier and identifier in already and not force:
             skipped.append(identifier)
             continue
@@ -534,7 +560,7 @@ def post_findings(config, number, selected_ids, *, mode="issue", lang="zh", dry_
         merge_base = git.merge_base((pr.get("base") or {}).get("sha"), head_sha)
     added_by_path = {}
     if git is not None:
-        for finding in findings:
+        for finding in list(findings) + list(open_findings):
             evidence = _evidence(finding) or {}
             path = evidence.get("path")
             if path and path not in added_by_path:
@@ -543,10 +569,13 @@ def post_findings(config, number, selected_ids, *, mode="issue", lang="zh", dry_
                 except Exception:
                     added_by_path[path] = set()
 
-    localized, translate_note = localize_findings(findings, lang, config, report_dir,
-                                                   translator=translator)
+    combined = list(findings) + list(open_findings)
+    localized_all, translate_note = localize_findings(combined, lang, config, report_dir,
+                                                      translator=translator)
+    localized = localized_all[:len(findings)]
+    localized_open = localized_all[len(findings):]
     plans, notes = plan_comments(localized, added_by_path, selected, mode,
-                                 lang=lang, bodies=bodies)
+                                 lang=lang, bodies=bodies, previous_findings=localized_open)
     if translate_note:
         notes.append(translate_note)
     if not plans:

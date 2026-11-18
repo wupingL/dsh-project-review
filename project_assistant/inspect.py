@@ -617,6 +617,7 @@ def _comparison(report):
     if not isinstance(data, dict):
         return None
     items = data.get("items")
+    new_findings = data.get("new")
     return {
         "previous_head_sha": _text(data.get("previous_head_sha")),
         "previous_report": _text(data.get("previous_report")),
@@ -625,7 +626,7 @@ def _comparison(report):
         if isinstance(items, list) else [],
         "fixed": [_comparison_item(item) for item in data.get("fixed") or [] if isinstance(item, dict)],
         "open": [_comparison_item(item) for item in data.get("open") or [] if isinstance(item, dict)],
-        "new": [_finding_card(item) for item in data.get("new") or [] if isinstance(item, dict)],
+        "new": _finding_cards(new_findings if isinstance(new_findings, list) else []),
     }
 
 

@@ -455,7 +455,11 @@ class ShowTests(InspectFixture):
                            "status": "fixed", "reason": "已修复",
                            "evidence": [{"path": "training/a.py", "line": 12, "reason": "新增校验"}]}],
                 "open": [],
-                "new": [],
+                "new": [{"title": "新问题", "severity": "low",
+                         "trigger": "触发", "system_function": "功能",
+                         "consequence": "后果", "confidence": "medium",
+                         "evidence": [{"path": "training/a.py", "line": 12, "reason": "证据"}],
+                         "verification": "验证"}],
             },
             comments=[{"finding": "F1", "title": "空指针风险", "path": "training/a.py", "line": 12,
                        "position": 12, "inline": True, "mode": "issue", "comment_id": "c1",
@@ -491,6 +495,8 @@ class ShowTests(InspectFixture):
         self.assertEqual(review["comparison"]["previous_head_sha"], "b" * 40)
         self.assertEqual(review["comparison"]["fixed"][0]["id"], "P1")
         self.assertEqual(review["comparison"]["fixed"][0]["status"], "fixed")
+        self.assertEqual(review["comparison"]["new"][0]["title"], "新问题")
+        self.assertEqual(review["comparison"]["new"][0]["evidence"][0]["path"], "training/a.py")
         self.assertEqual([item["finding"] for item in review["posted_comments"]], ["F1"])
         self.assertTrue(review["posted_comments"][0]["inline"])
         self.assertEqual(review["existing_comment_checks"], [])

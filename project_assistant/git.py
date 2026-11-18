@@ -92,6 +92,21 @@ class Git:
                 last = exc
         raise last
 
+    def source_url(self, candidate):
+        """PR 的 fork 地址可能跨主机（例如 GitHub fork 的 GitCode PR）。
+
+        fetch_head 会拒绝跨主机地址（防串仓库），但主仓库按 SHA 通常可取到 PR 提交，
+        所以这里统一回退到主仓库地址，而不是让整次操作失败。
+        """
+        expected = urlparse(self.config.get("repo_url")).hostname
+        if candidate:
+            try:
+                if urlparse(candidate).hostname == expected:
+                    return candidate
+            except ValueError:
+                pass
+        return self.config.get("repo_url")
+
     def fetch_head(self, url, sha, branch=None):
         """取得 PR head 提交。
 

@@ -403,7 +403,8 @@ class Reviews:
         if not source:
             full_name = pr.get("head", {}).get("repo", {}).get("full_name")
             source = "https://gitcode.com/" + full_name if full_name else self.config.get("repo_url")
-        self.git.fetch_head(source, job["head_sha"], branch=pr.get("source_branch") or pr.get("head", {}).get("ref"))
+        self.git.fetch_head(self.git.source_url(source), job["head_sha"],
+                            branch=pr.get("source_branch") or pr.get("head", {}).get("ref"))
         merge_base = self.git.merge_base(job["base_sha"], job["head_sha"])
         changed = self.git.changed(merge_base, job["head_sha"])
         discussion = [] if historical else self.existing_discussion(job)

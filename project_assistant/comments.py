@@ -518,7 +518,7 @@ def _added_lines(config, pr, head_sha):
     try:
         git = Git(config)
         git.initialize()
-        git.fetch_head(_source_for(pr), head_sha,
+        git.fetch_head(git.source_url(_source_for(pr)), head_sha,
                        branch=pr.get("source_branch") or (pr.get("head") or {}).get("ref"))
         base = pr.get("base") or {}
         base_sha = base.get("sha") or git.resolve(base.get("ref") or "HEAD")

@@ -79,5 +79,32 @@ class FetchHeadFallbackTests(unittest.TestCase):
             instance.fetch_head("https://evil.example.com/x/y.git", self.head)
 
 
+class SourceUrlTests(unittest.TestCase):
+    """PR fork 可能在其他主机：应回退主仓库，而不是让 fetch_head 直接失败。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.config_dir = root / "config"
+        self.config_dir.mkdir()
+        self.config_file = self.config_dir / "demo.json"
+        self.config_file.write_text(
+            '{"name": "demo", "repo_url": "https://gitcode.com/Ascend/RecSDK",'
+            ' "branches": ["develop"], "state_dir": "../state"}', encoding="utf-8")
+
+    def test_cross_host_falls_back_to_main_repo(self):
+        instance = Git(Config(self.config_file))
+        self.assertEqual(instance.source_url("https://github.com/fork/RecSDK"),
+                         "https://gitcode.com/Ascend/RecSDK")
+        self.assertEqual(instance.source_url(""), "https://gitcode.com/Ascend/RecSDK")
+        self.assertEqual(instance.source_url(None), "https://gitcode.com/Ascend/RecSDK")
+
+    def test_same_host_candidate_is_kept(self):
+        instance = Git(Config(self.config_file))
+        self.assertEqual(instance.source_url("https://gitcode.com/other/RecSDK"),
+                         "https://gitcode.com/other/RecSDK")
+
+
 if __name__ == "__main__":
     unittest.main()

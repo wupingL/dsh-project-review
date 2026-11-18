@@ -7,7 +7,7 @@
 # Layers:
 #   1. syntax/compile   compileall (Python) + node --check (Host/Client halves)
 #   2. controller tests unittest discover (inspect + projects + existing suite)
-#   3. host smoke       node scripts/verify_harness_plugin.mjs (fake ctx, 67 checks)
+#   3. host smoke       node scripts/verify_harness_plugin.mjs (fake ctx, 69 checks)
 #   4. real read-only   project list / branches / knowledge status / review list
 #   5. install state    profile bundle selection
 # Visual verification still needs a human look at the Harness page (the web port
@@ -51,7 +51,7 @@ if (-not $SkipTests) {
     Record 'unittest discover' $LASTEXITCODE
 }
 
-Section '3. host half smoke test (67 checks)'
+Section '3. host half smoke test (69 checks)'
 node scripts\verify_harness_plugin.mjs | Select-Object -Last 3
 Record 'verify_harness_plugin.mjs' $LASTEXITCODE
 

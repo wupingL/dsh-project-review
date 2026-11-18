@@ -1,12 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from project_assistant.comments import (build_comment, find_overlapping_comment, finding_id,
+from project_assistant.comments import (FOOTER, FOOTER_EN, _finding_key, build_comment,
+                                       find_overlapping_comment, finding_id, localize_findings,
                                        normalize_comments, parse_id, plan_comments, post_findings,
                                        posted_comments, resolve_anchor)
 from project_assistant.common import Config, atomic_json, run
@@ -288,6 +290,109 @@ class CommentApiTests(unittest.TestCase):
         rows = GitCode(config, transport=transport).comments(440)
         self.assertEqual(len(rows), 101)
         self.assertEqual(rows[-1]["id"], 5)
+
+
+class CommentLanguageTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        atomic_json(root / "config.json", {"name": "demo", "repo_url": "https://gitcode.com/demo/repo",
+                                           "branches": ["main"], "state_dir": "state"})
+        self.config = Config(root / "config.json")
+        self.report = self.config.repo_state / "reports" / "440" / "fp"
+        atomic_json(self.report / "review.json", {"metadata": {}, "review": {}})
+
+    def test_english_template_has_no_chinese(self):
+        finding = {"title": "Missing attention scaling", "severity": "high",
+                   "trigger": "NPU backward pass", "consequence": "gradients drift",
+                   "verification": "compare forward/backward outputs",
+                   "evidence": [{"path": "src/a.py", "line": 12, "reason": "alpha hardcoded"}]}
+        for mode in ("issue", "suggestion", "question"):
+            body = build_comment(finding, mode, "en")
+            self.assertIsNone(re.search(r"[\u4e00-\u9fff]", body), body)
+            self.assertIn("Evidence: `src/a.py:12`", body)
+            self.assertTrue(body.endswith(FOOTER_EN))
+        self.assertIn("[Issue · High]", build_comment(finding, "issue", "en"))
+        self.assertIn("[Suggestion]", build_comment(finding, "suggestion", "en"))
+        self.assertIn("[Question]", build_comment(finding, "question", "en"))
+
+    def test_edited_body_is_used_verbatim(self):
+        plans, _ = plan_comments(findings(), {"src/a.py": {12}}, ["F1"],
+                                 bodies={"F1": "My edited text"})
+        self.assertTrue(plans[0]["body"].startswith("My edited text"))
+        self.assertIn(FOOTER, plans[0]["body"])
+        plans, _ = plan_comments(findings(), {"src/a.py": set()}, ["F2"],
+                                 bodies={"F2": "Edited"})
+        self.assertIn("目标位置", plans[0]["body"])
+
+    def test_localize_caches_translation(self):
+        calls = []
+
+        def translator(items):
+            calls.append([item["title"] for item in items])
+            return {_finding_key(item): {"title": "EN " + item["title"], "trigger": "T",
+                                         "consequence": "C", "verification": "V",
+                                         "evidence": ["R"]} for item in items}
+
+        first, note = localize_findings(findings(), "en", self.config, self.report, translator=translator)
+        self.assertIsNone(note)
+        self.assertEqual(first[0]["title"], "EN 反向缩放缺失")
+        second, note = localize_findings(findings(), "en", self.config, self.report, translator=translator)
+        self.assertIsNone(note)
+        self.assertEqual(second[1]["title"], "EN 顶层导入顺序")
+        self.assertEqual(len(calls), 1)  # 第二次全部命中缓存
+
+    def test_localize_falls_back_when_translation_fails(self):
+        localized, note = localize_findings(findings(), "en", self.config, self.report,
+                                            translator=lambda items: None)
+        self.assertIsNotNone(note)
+        self.assertEqual(localized[0]["title"], findings()[0]["title"])
+
+
+class EditedCommentPostingTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        atomic_json(root / "config.json", {"name": "demo", "repo_url": "https://gitcode.com/demo/repo",
+                                           "branches": ["main"], "state_dir": "state"})
+        self.config = Config(root / "config.json")
+        self.folder = self.config.repo_state / "reports" / "440" / "fp"
+        atomic_json(self.folder / "review.json", {"metadata": {"head_sha": HEAD}, "review": {}})
+        self.pr = {"state": "open", "head": {"sha": HEAD}, "base": {"sha": BASE},
+                   "source_branch": "feature", "source_git_url": "https://gitcode.com/demo/repo"}
+
+    def report(self):
+        review = {"status": "current", "findings": findings(), "report_dir": str(self.folder)}
+        return ({"review": review}, review, {"head_sha": HEAD})
+
+    def translator(self, items):
+        return {_finding_key(item): {"title": "Translated finding %d" % (index + 1), "trigger": "Trigger",
+                                     "consequence": "Impact", "verification": "Verify",
+                                     "evidence": ["Reason"]} for index, item in enumerate(items)}
+
+    def test_dry_run_english_preview(self):
+        api = FakeApi(self.pr)
+        with patch.dict(os.environ, {"GITCODE_TOKEN": "test-token"}):
+            result = post_findings(self.config, 440, ["F1"], api=api, git=FakeGit({"src/a.py": {12}}),
+                                   report=self.report(), lang="en", translator=self.translator)
+        self.assertEqual(result["lang"], "en")
+        body = result["items"][0]["body"]
+        self.assertIn("[Issue · High] Translated finding 1", body)
+        self.assertIsNone(re.search(r"[\u4e00-\u9fff]", body), body)
+
+    def test_confirm_submits_edited_body(self):
+        api = FakeApi(self.pr)
+        with patch.dict(os.environ, {"GITCODE_TOKEN": "test-token"}):
+            result = post_findings(self.config, 440, ["F1"], api=api, git=FakeGit({"src/a.py": {12}}),
+                                   report=self.report(), dry_run=False, lang="en",
+                                   bodies={"F1": "Hand-written English comment"},
+                                   translator=self.translator, delay=0)
+        self.assertEqual(result["posted"], 1)
+        sent = api.calls[0]["body"]
+        self.assertTrue(sent.startswith("Hand-written English comment"))
+        self.assertIn(FOOTER_EN, sent)
 
 
 class AddedLineTests(unittest.TestCase):

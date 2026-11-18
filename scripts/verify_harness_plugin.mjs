@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 无安装依赖的 Host 半身冒烟测试。
  *
  * 用假的 ctx（工具注册表 + webServer.inject）加载 harness-plugin/index.js，
@@ -193,12 +193,19 @@ elif args[:1] == ['review'] and 'comment' in args:
     number = args[args.index('--pr') + 1] if '--pr' in args else '0'
     findings = [args[i + 1] for i, value in enumerate(args) if value == '--finding']
     mode = args[args.index('--mode') + 1] if '--mode' in args else 'issue'
+    lang = args[args.index('--lang') + 1] if '--lang' in args else 'zh'
     confirm = '--confirm' in args
-    emit({"ok": True, "dry_run": not confirm, "head_sha": "h" * 40, "mode": mode,
+    edits = {}
+    if '--edits-stdin' in args:
+        raw = sys.stdin.read().strip()
+        if raw:
+            edits = json.loads(raw)
+    emit({"ok": True, "dry_run": not confirm, "head_sha": "h" * 40, "mode": mode, "lang": lang,
+          "edits": edits,
           "items": [{"finding": f, "title": "stub", "path": "fasterrec/core/logging.py",
                      "line": 12, "position": 12, "inline": True,
                      "status": "posted" if confirm else "preview",
-                     "body": "【问题】stub"} for f in findings],
+                     "body": edits.get(f, "【问题】stub")} for f in findings],
           "posted": len(findings) if confirm else 0, "failed": 0, "notes": []})
 elif args[:1] == ['review'] and 'run' in args:
     number = args[args.index('--pr') + 1] if '--pr' in args else '0'
@@ -614,8 +621,9 @@ async function main() {
       && previewComments.body.items.length === 2, previewComments.body && JSON.stringify(previewComments.body).slice(0, 400));
     const commentLog = readFileSync(stubLog, 'utf8');
     const previewArgs = commentLog.slice(commentLogBefore);
-    check('评论请求先传 dry-run 参数', previewArgs.indexOf('review comment --pr 432 --mode issue --finding F1 --finding F2') >= 0
-      && previewArgs.indexOf('--confirm') < 0, previewArgs.split('\n').slice(-3).join(' | '));
+    check('评论请求先传 dry-run 参数', previewArgs.indexOf('review comment --pr 432 --mode issue --lang zh') >= 0
+      && previewArgs.indexOf('--finding F1') >= 0 && previewArgs.indexOf('--confirm') < 0,
+      previewArgs.split('\n').slice(-3).join(' | '));
 
     const postedComments = await callRoute(routes, '/recsdk-review/api/pulls/432/comments', 'POST',
       { project: 'recsdk', findings: ['F1'], mode: 'suggestion', confirm: true });
@@ -623,6 +631,21 @@ async function main() {
       && postedComments.body && postedComments.body.ok === true
       && postedComments.body.dry_run === false
       && postedComments.body.posted === 1, postedComments.body && JSON.stringify(postedComments.body).slice(0, 400));
+
+    const englishPreview = await callRoute(routes, '/recsdk-review/api/pulls/432/comments', 'POST',
+      { project: 'recsdk', findings: ['F1'], mode: 'issue', lang: 'en' });
+    check('评论支持纯英文模式', Boolean(englishPreview.body && englishPreview.body.ok === true
+      && englishPreview.body.lang === 'en' && englishPreview.body.dry_run === true),
+      englishPreview.body && JSON.stringify(englishPreview.body).slice(0, 300));
+
+    const editedConfirm = await callRoute(routes, '/recsdk-review/api/pulls/432/comments', 'POST',
+      { project: 'recsdk', findings: ['F1'], mode: 'issue', lang: 'zh', confirm: true,
+        edits: { F1: '手工编辑后的评论正文' } });
+    check('确认提交使用手动编辑的正文', Boolean(editedConfirm.body && editedConfirm.body.ok === true
+      && editedConfirm.body.posted === 1
+      && editedConfirm.body.edits && editedConfirm.body.edits.F1 === '手工编辑后的评论正文'
+      && editedConfirm.body.items[0].body === '手工编辑后的评论正文'),
+      editedConfirm.body && JSON.stringify(editedConfirm.body).slice(0, 400));
 
     const badComment = await callRoute(routes, '/recsdk-review/api/pulls/432/comments', 'POST',
       { project: 'recsdk', findings: [] });

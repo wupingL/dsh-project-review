@@ -156,6 +156,10 @@ def main(argv=None):
                          help="报告中的意见编号（F1、F2…），可重复")
     comment.add_argument("--mode", choices=["issue", "suggestion", "question"], default="issue",
                          help="评论口径：问题/建议/疑问")
+    comment.add_argument("--lang", choices=["zh", "en"], default="zh",
+                         help="评论语言：zh 中文 / en 纯英文（字段会做英文翻译）")
+    comment.add_argument("--edits-stdin", action="store_true",
+                         help="从 stdin 读取 {F1: 正文} 覆盖预览正文（页面确认时使用）")
     comment.add_argument("--confirm", action="store_true",
                          help="真正提交到 PR；默认只预览（dry-run）")
     comment.add_argument("--force", action="store_true", help="允许重复提交已评论过的意见")
@@ -237,8 +241,15 @@ def main(argv=None):
             elif args.action == "show":
                 result = show_pull(config, args.pr, offline=args.offline)
             elif args.action == "comment":
+                bodies = None
+                if args.edits_stdin:
+                    raw = sys.stdin.read().strip()
+                    bodies = json.loads(raw) if raw else {}
+                    if not isinstance(bodies, dict):
+                        raise ValueError("--edits-stdin 需要 JSON 对象 {F1: 正文}")
                 result = post_findings(config, args.pr, args.finding, mode=args.mode,
-                                       dry_run=not args.confirm, force=args.force)
+                                       lang=args.lang, dry_run=not args.confirm,
+                                       force=args.force, bodies=bodies)
             else:
                 reviews = Reviews(config)
                 if args.action == "recover":

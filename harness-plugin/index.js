@@ -1207,14 +1207,24 @@ function createService(options, hostBridge, modelBridge) {
       : [];
     if (!findings.length) throw new Error('请选择要评论的审查意见');
     const mode = ['issue', 'suggestion', 'question'].includes(body.mode) ? body.mode : 'issue';
+    const lang = body.lang === 'en' ? 'en' : 'zh';
     const args = [];
     if (projectId) args.push('--project', String(projectId));
-    args.push('review', 'comment', '--pr', String(numeric), '--mode', mode);
+    args.push('review', 'comment', '--pr', String(numeric), '--mode', mode, '--lang', lang);
     for (const id of findings) args.push('--finding', id);
     // 默认 dry-run；只有页面明确 confirm 才真正提交到 PR。
     if (body.confirm === true) args.push('--confirm');
     if (body.force === true) args.push('--force');
-    const data = await runJson(args, Math.max(options.cliTimeoutMs, 120000));
+    // 预览里手动编辑过的正文：确认时按编辑后的内容提交。
+    const edits = {};
+    if (body.confirm === true && body.edits && typeof body.edits === 'object') {
+      for (const [key, value] of Object.entries(body.edits)) {
+        if (/^F?\d+$/i.test(key) && typeof value === 'string' && value.trim()) edits[key] = value;
+      }
+    }
+    if (Object.keys(edits).length) args.push('--edits-stdin');
+    const data = await runJson(args, Math.max(options.cliTimeoutMs, 180000),
+      Object.keys(edits).length ? JSON.stringify(edits) : null);
     if (body.confirm === true) memo.clear();
     return data;
   }

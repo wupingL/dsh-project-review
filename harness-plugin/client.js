@@ -94,6 +94,11 @@ window.__ModuleLoader__.load({
       'comment.mode.issue': '问题',
       'comment.mode.suggestion': '建议',
       'comment.mode.question': '疑问',
+      'comment.lang': '语言',
+      'comment.lang.zh': '中文',
+      'comment.lang.en': '纯英文',
+      'comment.editHint': '可直接编辑正文；确认时按编辑后的内容提交',
+      'comment.emptyBody': '评论正文不能为空',
       'comment.submit': '提交评论到 PR',
       'comment.hint': '勾选意见后先预览，再确认提交到 PR 对应代码处',
       'comment.posting': '提交中…',
@@ -380,6 +385,11 @@ window.__ModuleLoader__.load({
       'comment.mode.issue': 'Issue',
       'comment.mode.suggestion': 'Suggestion',
       'comment.mode.question': 'Question',
+      'comment.lang': 'Language',
+      'comment.lang.zh': 'Chinese',
+      'comment.lang.en': 'English',
+      'comment.editHint': 'Edit any comment before posting; the edited text is what gets submitted',
+      'comment.emptyBody': 'A comment body cannot be empty',
       'comment.submit': 'Post to PR',
       'comment.hint': 'Select findings, preview the comments, then confirm to post them at the matching code lines',
       'comment.posting': 'Posting…',
@@ -1273,6 +1283,14 @@ window.__ModuleLoader__.load({
 .rr-page .rr-setup-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rr-page .rr-setup-title { font-weight: 600; font-size: 12.5px; }
 .rr-page .rr-setup-text { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.rr-page .rr-comment-edit-hint { font-size: 11px; margin: 2px 0 6px; }
+.rr-page .rr-comment-edit {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px; line-height: 1.55; padding: 8px 10px;
+  color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px;
+}
 .rr-page .rr-tag {
   flex: none;
   padding: 1px 6px;
@@ -2126,6 +2144,8 @@ window.__ModuleLoader__.load({
       // 评论选择状态必须无条件初始化（组件有多个提前返回分支）。
       const [selected, setSelected] = React.useState({});
       const [commentMode, setCommentMode] = React.useState('issue');
+      const [commentLang, setCommentLang] = React.useState('zh');
+      const [commentEdits, setCommentEdits] = React.useState({});
       const [commentPreview, setCommentPreview] = React.useState(null);
       const [commentPosting, setCommentPosting] = React.useState(false);
       const [commentError, setCommentError] = React.useState('');
@@ -2186,8 +2206,13 @@ window.__ModuleLoader__.load({
         setCommentPosting(true);
         setCommentError('');
         try {
+          const payload = { project: props.projectId, findings: selectedIds, mode: commentMode, lang: commentLang };
+          if (confirm === true) {
+            payload.confirm = true;
+            payload.edits = commentEdits;
+          }
           const data = await postJSON(API_BASE + '/pulls/' + encodeURIComponent(String(props.prNumber)) + '/comments',
-            { project: props.projectId, findings: selectedIds, mode: commentMode, confirm: confirm === true });
+            payload);
           if (!isObject(data) || (data.ok === false && !Array.isArray(data.items))) {
             throw new Error(asText(data && data.error, '') || t('comment.failed'));
           }
@@ -2198,6 +2223,11 @@ window.__ModuleLoader__.load({
             if (props.onCommented) props.onCommented();
           } else {
             setCommentPreview(data);
+            const initial = {};
+            (Array.isArray(data && data.items) ? data.items : []).forEach(function (item) {
+              if (isObject(item) && item.finding) initial[item.finding] = asText(item.body, '');
+            });
+            setCommentEdits(initial);
           }
         } catch (error) {
           setCommentError(errorText(error));
@@ -2304,11 +2334,21 @@ window.__ModuleLoader__.load({
               h('span', { className: 'rr-muted' }, t('comment.mode')),
               h('select', {
                 value: commentMode,
-                onChange: function (event) { setCommentMode(event.target.value); setCommentPreview(null); },
+                onChange: function (event) { setCommentMode(event.target.value); setCommentPreview(null); setCommentEdits({}); },
               },
                 h('option', { value: 'issue' }, t('comment.mode.issue')),
                 h('option', { value: 'suggestion' }, t('comment.mode.suggestion')),
                 h('option', { value: 'question' }, t('comment.mode.question'))
+              )
+            ),
+            h('label', { className: 'rr-comment-mode' },
+              h('span', { className: 'rr-muted' }, t('comment.lang')),
+              h('select', {
+                value: commentLang,
+                onChange: function (event) { setCommentLang(event.target.value === 'en' ? 'en' : 'zh'); setCommentPreview(null); setCommentEdits({}); },
+              },
+                h('option', { value: 'zh' }, t('comment.lang.zh')),
+                h('option', { value: 'en' }, t('comment.lang.en'))
               )
             ),
             h('button', {
@@ -2327,6 +2367,7 @@ window.__ModuleLoader__.load({
               h('span', { className: 'rr-muted' },
                 fill(t('comment.previewHint'), { n: (Array.isArray(commentPreview.items) ? commentPreview.items : []).length }))
             ),
+            h('div', { className: 'rr-comment-edit-hint rr-muted' }, t('comment.editHint')),
             (Array.isArray(commentPreview.items) ? commentPreview.items : []).map(function (item, index) {
               return h('div', { key: index, className: 'rr-comment-preview-item' },
                 h('div', { className: 'rr-comment-preview-meta' },
@@ -2335,13 +2376,30 @@ window.__ModuleLoader__.load({
                     asText(item.path, '') + (item.line ? ':' + String(item.line) : '')),
                   h('span', { className: 'rr-badge' }, item.inline ? t('comment.inline') : t('comment.general'))
                 ),
-                h('pre', { className: 'rr-comment-body' }, asText(item.body, ''))
+                h('textarea', {
+                  className: 'rr-comment-edit',
+                  rows: Math.min(12, Math.max(4, String(commentEdits[item.finding] || item.body || '').split('\n').length)),
+                  value: asText(commentEdits[item.finding] !== undefined ? commentEdits[item.finding] : item.body, ''),
+                  onChange: function (event) {
+                    const value = event && event.target ? event.target.value : '';
+                    setCommentEdits(function (previous) {
+                      return Object.assign({}, previous, { [item.finding]: value });
+                    });
+                  },
+                })
               );
             }),
             h('div', { className: 'rr-comment-preview-actions' },
               h('button', {
-                type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm', disabled: commentPosting,
-                onClick: function () { submitComments(true); },
+                type: 'button', className: 'rr-btn rr-btn-primary rr-btn-sm',
+                disabled: commentPosting || (Array.isArray(commentPreview.items) ? commentPreview.items : [])
+                  .some(function (item) { return !String(commentEdits[item.finding] || item.body || '').trim(); }),
+                onClick: function () {
+                  const empty = (Array.isArray(commentPreview.items) ? commentPreview.items : [])
+                    .some(function (item) { return !String(commentEdits[item.finding] || item.body || '').trim(); });
+                  if (empty) { setCommentError(t('comment.emptyBody')); return; }
+                  submitComments(true);
+                },
               }, commentPosting ? t('comment.posting') : t('comment.confirm')),
               h('button', {
                 type: 'button', className: 'rr-btn rr-btn-sm', disabled: commentPosting,

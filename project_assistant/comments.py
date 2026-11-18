@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from pathlib import Path
@@ -24,9 +26,12 @@ from .platforms import create_api, repo_host
 
 
 SEVERITY_LABELS = {"critical": "严重", "high": "高", "medium": "中", "low": "低"}
+SEVERITY_LABELS_EN = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}
 COMMENT_MODES = {"issue": "问题", "suggestion": "建议", "question": "疑问"}
+COMMENT_LANGUAGES = {"zh": "中文", "en": "English"}
 MAX_SELECTED = 10
 FOOTER = "> 自动检视意见，请人工确认后处理。"
+FOOTER_EN = "> Automated review comment. Please verify before acting."
 ANCHOR_WINDOW = 5
 
 
@@ -159,20 +164,49 @@ def _evidence(finding):
     return None
 
 
-def build_comment(finding, mode="issue"):
-    """按常用检视口径生成评论正文。"""
-    title = _clip(finding.get("title"), 160) or "审查意见"
-    severity = SEVERITY_LABELS.get(str(finding.get("severity")), "")
+def build_comment(finding, mode="issue", lang="zh"):
+    """按常用检视口径生成评论正文（zh/en 两套模板，字段文本由调用方决定语言）。"""
+    english = lang == "en"
+    title = _clip(finding.get("title"), 160) or ("Review finding" if english else "审查意见")
+    severity = (SEVERITY_LABELS_EN if english else SEVERITY_LABELS).get(str(finding.get("severity")), "")
     evidence = _evidence(finding)
     reference = ""
     if evidence and evidence["path"]:
         location = evidence["path"] + (":" + str(evidence["line"]) if evidence["line"] else "")
-        reference = f"依据：`{location}`"
+        reference = f"Evidence: `{location}`" if english else f"依据：`{location}`"
         if evidence["reason"]:
-            reference += f" — {evidence['reason']}"
+            reference += " — " + evidence["reason"]
     trigger = _clip(finding.get("trigger"), 300)
     consequence = _clip(finding.get("consequence"), 300)
     verification = _clip(finding.get("verification"), 300)
+    if english:
+        if mode == "suggestion":
+            lines = [f"[Suggestion] {title}", ""]
+            if verification:
+                lines += [f"Suggestion: {verification}", ""]
+            if reference:
+                lines += [reference, ""]
+        elif mode == "question":
+            lines = [f"[Question] {title}", ""]
+            question = "Is this scenario already covered"
+            question += f" ({trigger})" if trigger else ""
+            question += f"? If not, it may cause: {consequence}" if consequence else "?"
+            lines += [question, ""]
+            if reference:
+                lines += [reference, ""]
+        else:
+            head = f"[Issue{(' · ' + severity) if severity else ''}] {title}"
+            lines = [head, ""]
+            if trigger:
+                lines.append(f"Trigger: {trigger}")
+            if consequence:
+                lines.append(f"Impact: {consequence}")
+            if verification:
+                lines.append(f"Suggestion: {verification}")
+            if reference:
+                lines.append(reference)
+            lines.append("")
+        return "\n".join([line for line in lines if line is not None] + [FOOTER_EN])
     if mode == "suggestion":
         head = f"【建议】{title}"
         lines = [head, ""]
@@ -204,6 +238,115 @@ def build_comment(finding, mode="issue"):
     return "\n".join([line for line in lines if line is not None] + [FOOTER])
 
 
+def _finding_key(finding):
+    """同一意见的字段指纹，用于缓存英文翻译。"""
+    parts = [finding.get("title"), finding.get("trigger"), finding.get("consequence"),
+             finding.get("verification")]
+    for item in finding.get("evidence") or []:
+        if isinstance(item, dict):
+            parts.append(item.get("reason"))
+    return hashlib.sha1("|".join(str(part or "") for part in parts).encode("utf-8")).hexdigest()[:16]
+
+
+def _translate_with_model(findings, config, output_path):
+    """一次模型调用把选中意见的字段翻译成英文；失败返回 None。"""
+    from .backends import create_model
+
+    items = []
+    for index, finding in enumerate(findings, start=1):
+        evidence = finding.get("evidence") or []
+        reasons = [str(item.get("reason") or "") for item in evidence if isinstance(item, dict)]
+        items.append({
+            "key": _finding_key(finding),
+            "title": str(finding.get("title") or ""),
+            "trigger": str(finding.get("trigger") or ""),
+            "consequence": str(finding.get("consequence") or ""),
+            "verification": str(finding.get("verification") or ""),
+            "evidence": reasons,
+        })
+    prompt = ("把下面 JSON 中每条审查意见的 title/trigger/consequence/verification/evidence 翻译成"
+              "自然、专业的英文；保留代码标识符、路径、行号与专有名词原样；不要合并或省略条目。"
+              "只输出 JSON 对象，结构与输入一致（items 数组，key 原样返回）。\n"
+              + json.dumps({"items": items}, ensure_ascii=False))
+    schema = {
+        "type": "object",
+        "properties": {"items": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"key": {"type": "string"}, "title": {"type": "string"},
+                           "trigger": {"type": "string"}, "consequence": {"type": "string"},
+                           "verification": {"type": "string"},
+                           "evidence": {"type": "array", "items": {"type": "string"}}},
+            "required": ["key", "title", "trigger", "consequence", "verification", "evidence"],
+            "additionalProperties": False}}},
+        "required": ["items"],
+        "additionalProperties": False,
+    }
+    try:
+        model = create_model(config)
+        result = model.invoke(prompt, schema, config.repo_state, output_path)
+    except Exception:  # noqa: BLE001 - 翻译失败时回退原文
+        return None
+    items = result.get("items") if isinstance(result, dict) else None
+    if not isinstance(items, list):
+        return None
+    return {str(item.get("key")): item for item in items if isinstance(item, dict)}
+
+
+def localize_findings(findings, lang, config, report_dir=None, *, translator=None):
+    """把意见字段本地化成目标语言，返回 (findings, note)。
+
+    zh：原样返回；en：优先用缓存，再调用一次模型翻译，失败时回退原文并提示。
+    """
+    if lang != "en":
+        return findings, None
+    cache_path = (Path(report_dir) / "comments.i18n.json") if report_dir else None
+    cache = read_json(cache_path, {}) if cache_path else {}
+    cache = cache if isinstance(cache, dict) else {}
+    missing = []
+    for finding in findings:
+        if _finding_key(finding) not in cache:
+            missing.append(finding)
+    if missing:
+        if translator is not None:
+            translated = translator(missing)
+        else:
+            if cache_path is not None:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+            translated = _translate_with_model(missing, config,
+                                               (cache_path.parent / "comments.i18n.tmp.json")
+                                               if cache_path else config.repo_state / "comments.i18n.tmp.json")
+        if not isinstance(translated, dict):
+            return findings, "英文翻译失败，已使用原文；可在预览中手动编辑"
+        cache.update(translated)
+        if cache_path is not None:
+            atomic_json(cache_path, cache)
+    localized = []
+    for finding in findings:
+        item = cache.get(_finding_key(finding))
+        if not isinstance(item, dict):
+            localized.append(finding)
+            continue
+        copy = dict(finding)
+        copy["title"] = str(item.get("title") or copy.get("title") or "")
+        copy["trigger"] = str(item.get("trigger") or copy.get("trigger") or "")
+        copy["consequence"] = str(item.get("consequence") or copy.get("consequence") or "")
+        copy["verification"] = str(item.get("verification") or copy.get("verification") or "")
+        reasons = item.get("evidence")
+        if isinstance(reasons, list) and copy.get("evidence"):
+            evidence = []
+            for position, entry in enumerate(copy["evidence"]):
+                if not isinstance(entry, dict):
+                    evidence.append(entry)
+                    continue
+                translated_entry = dict(entry)
+                if position < len(reasons) and str(reasons[position] or "").strip():
+                    translated_entry["reason"] = str(reasons[position])
+                evidence.append(translated_entry)
+            copy["evidence"] = evidence
+        localized.append(copy)
+    return localized, None
+
+
 def resolve_anchor(added, line, window=ANCHOR_WINDOW):
     """把意见行号映射到 diff 新增行：精确命中优先，其次用附近（window 内）的新增行。"""
     if not added or not isinstance(line, int) or line <= 0:
@@ -214,10 +357,14 @@ def resolve_anchor(added, line, window=ANCHOR_WINDOW):
     return nearest if abs(nearest - line) <= window else None
 
 
-def plan_comments(findings, added_by_path, selected_ids, mode="issue"):
-    """生成待评论计划（纯函数，不做网络 IO）。"""
+def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh", bodies=None):
+    """生成待评论计划（纯函数，不做网络 IO）。
+
+    ``bodies``：{finding_id: text}，来自页面预览时的手动编辑；提供时按编辑后的正文提交。
+    """
     plans = []
     notes = []
+    bodies = bodies if isinstance(bodies, dict) else {}
     for raw in selected_ids:
         index = parse_id(raw)
         if index is None or index > len(findings):
@@ -228,12 +375,28 @@ def plan_comments(findings, added_by_path, selected_ids, mode="issue"):
         path = evidence.get("path") or ""
         line = evidence.get("line") or 0
         position = resolve_anchor(added_by_path.get(path, set()), line) if path else None
-        body = build_comment(finding, mode)
+        identifier = finding_id(index)
+        edited = str(bodies.get(identifier) or "").strip()
+        body = edited or build_comment(finding, mode, lang)
         inline = bool(position) and bool(path)
         if not inline:
-            location = path + (":" + str(line) if line else "") if path else "未定位"
-            body = f"> 目标位置：`{location}`（该行不在本次 diff 的新增/修改行内，作为 PR 评论提交）\n\n" + body
-            notes.append(f"{finding_id(index)} 未命中 diff 新增行，退化为 PR 级评论")
+            location = path + (":" + str(line) if line else "") if path else ("unlocated" if lang == "en" else "未定位")
+            if edited:
+                marker = "Target location" if lang == "en" else "目标位置"
+                if marker not in body:
+                    prefix = (f"> Target location: `{location}` (not an added line in this diff; "
+                              "posted as a PR-level comment)" if lang == "en"
+                              else f"> 目标位置：`{location}`（该行不在本次 diff 的新增/修改行内，作为 PR 级评论提交）")
+                    body = prefix + "\n\n" + body
+            else:
+                prefix = (f"> Target location: `{location}` (not an added line in this diff; "
+                          "posted as a PR-level comment)" if lang == "en"
+                          else f"> 目标位置：`{location}`（该行不在本次 diff 的新增/修改行内，作为 PR 级评论提交）")
+                body = prefix + "\n\n" + body
+            notes.append(f"{identifier} 未命中 diff 新增行，退化为 PR 级评论")
+        footer = FOOTER_EN if lang == "en" else FOOTER
+        if footer not in body:
+            body = body.rstrip() + "\n\n" + footer
         plans.append({
             "finding": finding_id(index),
             "index": index,
@@ -320,12 +483,17 @@ def _fetch_existing_comments(api, number):
         return [], f"无法读取 PR 已有评论（{exc}）；未做重复检查"
 
 
-def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, force=False,
-                  api=None, git=None, report=None, delay=0.6):
+def post_findings(config, number, selected_ids, *, mode="issue", lang="zh", dry_run=True,
+                  force=False, bodies=None, api=None, git=None, report=None, delay=0.6,
+                  translator=None):
     """预览或提交审查意见评论。
 
-    返回结构：{ok, dry_run, head_sha, items:[...], posted, failed, notes}
+    - ``lang``：评论模板语言（zh/en）。en 时先把字段翻译成英文（带缓存），失败回退原文；
+    - ``bodies``：{finding_id: text}，页面预览里手动编辑后的正文，确认时原样提交。
+
+    返回结构：{ok, dry_run, head_sha, lang, items:[...], posted, failed, notes}
     """
+    lang = "en" if str(lang).lower().startswith("en") else "zh"
     api = api or create_api(config)
     pr = api.pull(int(number))
     state = str(pr.get("state") or "").lower()
@@ -375,7 +543,12 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
                 except Exception:
                     added_by_path[path] = set()
 
-    plans, notes = plan_comments(findings, added_by_path, selected, mode)
+    localized, translate_note = localize_findings(findings, lang, config, report_dir,
+                                                   translator=translator)
+    plans, notes = plan_comments(localized, added_by_path, selected, mode,
+                                 lang=lang, bodies=bodies)
+    if translate_note:
+        notes.append(translate_note)
     if not plans:
         raise ValueError("没有可提交的评论：" + "；".join(notes))
 
@@ -404,7 +577,7 @@ def post_findings(config, number, selected_ids, *, mode="issue", dry_run=True, f
                          + "），已全部跳过；如需重复提交请加 --force")
     plans = kept
 
-    result = {"ok": True, "dry_run": dry_run, "head_sha": head_sha, "mode": mode,
+    result = {"ok": True, "dry_run": dry_run, "head_sha": head_sha, "mode": mode, "lang": lang,
               "items": [], "posted": 0, "failed": 0, "skipped": skipped,
               "skipped_existing": skipped_existing, "notes": notes,
               "existing_comment_count": len(existing)}

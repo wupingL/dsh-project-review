@@ -152,6 +152,10 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 
 - **常用检视口径**：评论正文按「【问题·严重度】标题 → 触发场景 → 影响 → 建议 → 依据 `path:line`」组织；
   建议口径只给修改建议，疑问口径改成向作者提问。
+- **语言**：可选「中文 / 纯英文」。英文模式会把选中意见的标题、触发场景、影响、建议与证据原因翻译成英文
+  （一次模型调用，结果缓存在报告目录 `comments.i18n.json`，失败则回退原文并在预览里提示）；模板、严重度与页脚
+  使用英文。
+- **确认前可编辑**：预览里每条评论都是可编辑文本框，确认提交时按编辑后的正文发送（不会重新生成）。
 - **行内定位**：用 `commit_id + path + position` 提交行内评论。`position` 用文件行号，且必须落在本次 diff
   的新增/修改行上；不在 diff 内的意见（或平台返回 400）自动退化为 PR 级评论，并在正文用 `> 目标位置：path:line` 标注。
 - **防重复刷屏**：已提交的评论记录在报告目录 `comments.json`，页面显示「已评论」，默认跳过；`--force` 才允许重复提交。
@@ -254,7 +258,7 @@ plugin_manager remove_bundle target = "@local/recsdk-review"
 > 页面也会显示「依赖未初始化」横幅与初始化按钮。
 
 ```powershell
-# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，67 项检查
+# 1) Host 半身冒烟测试（不需要安装、不需要真实控制器）：假 ctx + 假控制器，69 项检查
 node scripts\verify_harness_plugin.mjs
 
 # 2) 控制器只读命令

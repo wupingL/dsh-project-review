@@ -33,6 +33,8 @@ MAX_SELECTED = 10
 FOOTER = "> 自动检视意见，请人工确认后处理。"
 FOOTER_EN = "> Automated review comment. Please verify before acting."
 ANCHOR_WINDOW = 5
+# 评论最终必须落在本次 diff 的新增/修改行：允许在同一文件内就近定位得更远一些。
+COMMENT_WINDOW = 40
 
 
 def finding_id(index):
@@ -414,10 +416,19 @@ def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh"
                     line = entry.get("line") if isinstance(entry.get("line"), int) else 0
                     deleted_line = entry.get("line_status") == "deleted"
                     break
-        position = resolve_anchor(added_by_path.get(path, set()), line) if path and not deleted_line else None
+        allowed = added_by_path.get(path, set())
+        position = resolve_anchor(allowed, line, window=COMMENT_WINDOW) if path and not deleted_line else None
+        relocated = bool(position) and position != line
         edited = str(bodies.get(identifier) or "").strip()
         body = edited or build_comment(finding, mode, lang)
         inline = bool(position) and bool(path)
+        if inline and relocated:
+            hint = (f"> Related changed line: `{path}:{position}` (finding line {line})"
+                    if lang == "en" else
+                    f"> 关联修改行：`{path}:{position}`（证据行 {line}）")
+            if hint not in body:
+                body = hint + "\n\n" + body
+            notes.append(f"{identifier} 已定位到本次修改行 {position}（证据行 {line}）")
         if not inline:
             location = path + (":" + str(line) if line else "") if path else ("unlocated" if lang == "en" else "未定位")
             if edited:
@@ -435,7 +446,7 @@ def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh"
             if deleted_line:
                 notes.append(f"{identifier} 对应代码行已删除或大幅修改，按 PR 级评论提交")
             else:
-                notes.append(f"{identifier} 未命中 diff 新增行，退化为 PR 级评论")
+                notes.append(f"{identifier} 附近没有本次修改行，退化为 PR 级评论并在正文标注位置")
         footer = FOOTER_EN if lang == "en" else FOOTER
         if footer not in body:
             body = body.rstrip() + "\n\n" + footer

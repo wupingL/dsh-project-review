@@ -150,6 +150,14 @@ class ReviewModeIntegrationTests(Fixture):
         metadata = read_json(Path(folder) / "review.json")["metadata"]
         self.assertEqual(metadata["existing_comment_count"], 1)
 
+    def test_prompt_lists_changed_lines_and_marks_outside_evidence(self):
+        _, result = self._run_review("docs/notes.patch", "--- a/x\n+++ b/x\n+one\n")
+        prompts = [prompt for _, prompt in self.model.calls]
+        self.assertTrue(any("本次 PR 的新增/修改行" in prompt for prompt in prompts))
+        self.assertTrue(any("docs/notes.patch" in prompt for prompt in prompts))
+        gaps = " ".join(result["review"]["coverage_gaps"])
+        self.assertIn("证据不在本次修改行", gaps)
+
     def test_process_one_forwards_explicit_mode(self):
         reviews = Reviews(self.config, model=self.model)
         self.addCleanup(reviews.state.close)

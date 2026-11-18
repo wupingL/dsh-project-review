@@ -99,6 +99,13 @@ class CommentTextTests(unittest.TestCase):
         self.assertIsNone(resolve_anchor(set(), 5))
         self.assertIsNone(resolve_anchor({5}, 0))
 
+    def test_comment_relocates_to_nearest_changed_line(self):
+        plans, notes = plan_comments(findings(), {"src/a.py": {30}}, ["F1"])
+        self.assertTrue(plans[0]["inline"])
+        self.assertEqual(plans[0]["position"], 30)
+        self.assertIn("关联修改行", plans[0]["body"])
+        self.assertTrue(any("已定位到本次修改行" in note for note in notes))
+
     def test_plan_marks_inline_and_fallback(self):
         plans, notes = plan_comments(findings(), {"src/a.py": {11, 12}, "src/b.py": set()},
                                      ["F1", "F2", "F9"])

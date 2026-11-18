@@ -511,6 +511,7 @@ def _finding_cards(value):
                     "line": line if line is not None else 0,
                     "reason": _text(item.get("reason")) or "",
                     "previous_line": _int(item.get("previous_line")),
+                    "relocated_from": _int(item.get("relocated_from")),
                     "line_status": _text(item.get("line_status")),
                 })
         result.append({

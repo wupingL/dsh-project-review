@@ -156,6 +156,48 @@ class Git:
     def changed(self, base, head):
         return [p for p in self.command("diff", "--name-only", "--no-renames", "-z", base, head).split("\0") if p]
 
+    @staticmethod
+    def parse_added_lines(patch):
+        """从 unified diff 文本解析 {path: {新文件侧新增/修改行号}}（一次解析整份 diff）。"""
+        added = {}
+        current = None
+        new_line = 0
+        for line in patch.splitlines():
+            if line.startswith("+++ "):
+                target = line[4:].strip()
+                if target == "/dev/null":
+                    current = None
+                    continue
+                if target.startswith("b/"):
+                    target = target[2:]
+                current = target
+                added.setdefault(current, set())
+                continue
+            if line.startswith("@@"):
+                match = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
+                if match:
+                    new_line = int(match.group(1))
+                continue
+            if current is None:
+                continue
+            if line.startswith("+") and not line.startswith("+++"):
+                added[current].add(new_line)
+                new_line += 1
+            elif line.startswith(" "):
+                new_line += 1
+        return added
+
+    @staticmethod
+    def line_ranges(lines):
+        """把行号集合压缩成 [start, end] 区间列表。"""
+        ranges = []
+        for line in sorted(set(lines)):
+            if ranges and line == ranges[-1][1] + 1:
+                ranges[-1][1] = line
+            else:
+                ranges.append([line, line])
+        return ranges
+
     def line_map(self, old, new, path):
         """把 old 提交里的行号映射到 new 提交（同一路径）。
 

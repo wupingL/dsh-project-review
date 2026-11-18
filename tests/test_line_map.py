@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import tempfile
 import unittest
@@ -88,6 +88,62 @@ class RemapOpenFindingsTests(unittest.TestCase):
         findings = [{"evidence": [{"path": "a.py", "line": 3}]}]
         Reviews.remap_open_findings(reviews, findings, None, "new")
         self.assertEqual(findings[0]["evidence"][0]["line"], 3)
+
+
+class AddedLineParsingTests(unittest.TestCase):
+    PATCH = (
+        "diff --git a/a.py b/a.py\n"
+        "--- a/a.py\n+++ b/a.py\n"
+        "@@ -1,3 +1,4 @@\n"
+        " one\n+added\n two\n three\n"
+        "@@ -10,2 +11,2 @@\n"
+        "-old\n+new\n"
+        " tail\n"
+        "diff --git a/b.py b/b.py\n"
+        "--- a/b.py\n+++ b/b.py\n"
+        "@@ -1 +1 @@\n"
+        "+only\n"
+    )
+
+    def test_added_and_modified_lines_are_parsed(self):
+        added = Git.parse_added_lines(self.PATCH)
+        self.assertEqual(added["a.py"], {2, 11})
+        self.assertEqual(added["b.py"], {1})
+
+    def test_ranges_are_compressed(self):
+        ranges = Git.line_ranges({2, 3, 4, 9, 11, 12})
+        self.assertEqual(ranges, [[2, 4], [9, 9], [11, 12]])
+
+
+class RelocateEvidenceTests(unittest.TestCase):
+    def test_nearby_evidence_moves_to_changed_line(self):
+        findings = [{"title": "T", "evidence": [{"path": "a.py", "line": 20, "reason": "r"}]}]
+        notes = Reviews.relocate_evidence(findings, {"a.py": {2, 30}})
+        entry = findings[0]["evidence"][0]
+        self.assertEqual(entry["line"], 30)
+        self.assertEqual(entry["relocated_from"], 20)
+        self.assertEqual(entry["line_status"], "relocated")
+        self.assertEqual(notes, [])
+
+    def test_far_evidence_is_marked_outside_diff(self):
+        findings = [{"title": "T", "evidence": [{"path": "a.py", "line": 300, "reason": "r"}]}]
+        notes = Reviews.relocate_evidence(findings, {"a.py": {2, 30}})
+        entry = findings[0]["evidence"][0]
+        self.assertEqual(entry["line"], 300)
+        self.assertEqual(entry["line_status"], "outside-diff")
+        self.assertTrue(any("证据不在本次修改行" in note for note in notes))
+
+    def test_evidence_in_changed_line_is_untouched(self):
+        findings = [{"title": "T", "evidence": [{"path": "a.py", "line": 2, "reason": "r"}]}]
+        Reviews.relocate_evidence(findings, {"a.py": {2, 30}})
+        entry = findings[0]["evidence"][0]
+        self.assertNotIn("line_status", entry)
+        self.assertNotIn("relocated_from", entry)
+
+    def test_file_without_changed_lines_is_marked(self):
+        findings = [{"title": "T", "evidence": [{"path": "docs/x.md", "line": 5, "reason": "r"}]}]
+        Reviews.relocate_evidence(findings, {"a.py": {2}})
+        self.assertEqual(findings[0]["evidence"][0]["line_status"], "outside-diff")
 
 
 if __name__ == "__main__":

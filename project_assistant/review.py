@@ -176,6 +176,48 @@ class Reviews:
                     "excerpt": brief(match.get("body"), 160),
                 }
 
+    @staticmethod
+    def relocate_evidence(findings, added_by_path, window=40):
+        """把证据行收敛到本次 diff 的新增/修改行。
+
+        - 已在新增行：不变；
+        - 同一文件附近（window 内）：改到最近的新增行，保留 relocated_from；
+        - 文件没有新增行或距离过远：标记 outside-diff（评论会退化为 PR 级并说明原因）。
+        """
+        notes = []
+        for finding in findings if isinstance(findings, list) else []:
+            if not isinstance(finding, dict):
+                continue
+            evidence = finding.get("evidence")
+            if not isinstance(evidence, list):
+                continue
+            marked = []
+            for entry in evidence:
+                if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                    continue
+                path = entry["path"]
+                line = entry.get("line")
+                if not isinstance(line, int):
+                    continue
+                allowed = added_by_path.get(path)
+                if not allowed:
+                    entry["line_status"] = entry.get("line_status") or "outside-diff"
+                    marked.append(path)
+                    continue
+                if line in allowed:
+                    continue
+                nearest = min(allowed, key=lambda candidate: (abs(candidate - line), candidate))
+                if abs(nearest - line) <= window:
+                    entry["relocated_from"] = line
+                    entry["line"] = nearest
+                    entry["line_status"] = "relocated"
+                else:
+                    entry["line_status"] = "outside-diff"
+                    marked.append(path)
+            if marked:
+                notes.append(f"{finding.get('title') or '意见'}：证据不在本次修改行（{', '.join(sorted(set(marked)))}），已标注 outside-diff")
+        return notes
+
     def remap_open_findings(self, findings, previous_head, head):
         """上一轮意见的证据行随代码演进同步到当前 head（行号漂移修正）。"""
         if not previous_head or not head or previous_head == head or not isinstance(findings, list):
@@ -389,6 +431,8 @@ class Reviews:
         before_workspace = self.git.workspace(merge_base)
         patch = self.git.command("diff", "--no-ext-diff", "--no-textconv", "--unified=5", merge_base, job["head_sha"])
         limit = self.config.get("max_diff_chars", 160000)
+        # 本次 PR 的新增/修改行：审查证据与最终评论都必须落在这些行上。
+        added_by_path = self.git.parse_added_lines(patch)
         diff_truncated = len(patch) > limit
         previous = None if historical else self.previous_review(job)
         previous_findings = self.previous_findings(previous)
@@ -416,6 +460,13 @@ class Reviews:
         prompt += "\n删除的代码可从 merge-base 工作区读取，当前目标分支工作区用于判断最新集成交互。"
         prompt += f"\n工作区：head={head_workspace}; target={base_workspace}; merge-base={before_workspace}"
         prompt += "\n若发现需要执行代码才能确认的问题，列入 risks_to_verify，并给出验证方法。"
+        changed_lines = {path: self.git.line_ranges(lines)
+                         for path, lines in sorted(added_by_path.items()) if lines}
+        prompt += ("\n本次 PR 的新增/修改行（证据行必须落在这些行内，行内评论只能定位到这些行）："
+                   + json.dumps(changed_lines, ensure_ascii=False))
+        prompt += ("\n证据要求：每条 findings 的第一条证据必须是本次 diff 的新增/修改行"
+                   "（被删除/未修改的代码不能作为唯一证据）；若根因位于未修改的关联代码，"
+                   "请把证据指向本次修改中触发/暴露该问题的行，并在 reason 中说明关联的未修改位置。")
         prompt += "\nPR 数据：" + json.dumps({"title": pr.get("title"), "body": pr.get("body", pr.get("description")),
                                                  "metadata": metadata}, ensure_ascii=False)
         prompt += "\n基线知识：" + json.dumps(base_pack, ensure_ascii=False)
@@ -451,7 +502,12 @@ class Reviews:
         schema = review_schema(previous=bool(previous_findings), discussion=bool(discussion))
         result = self.model.invoke(prompt, schema, head_workspace, folder / "model.json",
                                    sources={"head": head_workspace, "target": base_workspace, "merge_base": before_workspace})
-        progress(f"pr #{job['number']}：校验审查证据（路径与行号）")
+        progress(f"pr #{job['number']}：校验审查证据（路径与行号，并定位到本次修改行）")
+        relocated = self.relocate_evidence(result.get("findings"), added_by_path)
+        for finding in (result.get("findings") or []):
+            notes = finding.pop("_evidence_notes", None)
+            if notes:
+                relocated.extend(notes)
         self.validate_findings(result, [head_workspace, base_workspace, before_workspace])
         comparison = self.compare_previous(previous, previous_findings, result)
         if comparison:
@@ -471,6 +527,8 @@ class Reviews:
             progress(f"pr #{job['number']}：复核已有评论（{len(checks)} 条，其中已处理 {resolved} 条）")
         result["coverage_gaps"] += [metadata["ci"]["coverage_gap"],
                                     "未在本机执行 PR 代码、构建、测试或 Ascend 性能实测。"]
+        if relocated:
+            result["coverage_gaps"].extend(relocated)
         if knowledge_mode == "fast":
             result["coverage_gaps"].append(
                 "快速审查：变更文件未被源码索引，未对 head 做语义领域分析；上下文仅含结构索引、diff 与工作区只读核对。")

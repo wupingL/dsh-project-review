@@ -162,6 +162,8 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
 - **确认前可编辑**：预览里每条评论都是可编辑文本框，确认提交时按编辑后的正文发送（不会重新生成）。
 - **行内定位**：用 `commit_id + path + position` 提交行内评论。`position` 用文件行号，且必须落在本次 diff
   的新增/修改行上；不在 diff 内的意见（或平台返回 400）自动退化为 PR 级评论，并在正文用 `> 目标位置：path:line` 标注。
+  审查阶段已要求证据指向本次修改行：同一文件内偏离≤40 行的证据会自动定位到最近修改行并在正文注明「关联修改行」，
+  偏离过大或文件没有修改行时标记 `outside-diff`，评论退化为 PR 级并标注原因。
 - **防重复刷屏**：已提交的评论记录在报告目录 `comments.json`，页面显示「已评论」，默认跳过；`--force` 才允许重复提交。
 - **安全门槛**：报告必须 `current` 且报告 head 与 PR 当前 head 一致，否则拒绝（避免按旧行号评论）；
   需要带 `pull_requests` 写权限的 `GITCODE_TOKEN`（与只读查询同一个变量）。

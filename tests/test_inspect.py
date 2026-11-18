@@ -38,7 +38,7 @@ SHOW_REVIEW_KEYS = REVIEW_KEYS | {
 }
 FINDING_KEYS = {"origin", "title", "severity", "trigger", "system_function", "consequence",
                 "evidence", "verification", "confidence", "existing_comment"}
-EVIDENCE_KEYS = {"path", "line", "reason", "previous_line", "line_status"}
+EVIDENCE_KEYS = {"path", "line", "reason", "previous_line", "relocated_from", "line_status"}
 JOB_KEYS = {"status", "attempts", "error", "updated"}
 
 SCHEMA = """

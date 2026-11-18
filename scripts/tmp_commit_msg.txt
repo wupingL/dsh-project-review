@@ -1,7 +1,0 @@
-Fix review detail crash on comparison with new findings
-
-inspect._comparison called the singular _finding_card, which does not exist,
-so opening any PR whose report had comparison.json with a non-empty "new"
-list failed with "name '_finding_card' is not defined". It now reuses
-_finding_cards for the list, and the inspect fixture covers a non-empty new
-list so the path stays tested.

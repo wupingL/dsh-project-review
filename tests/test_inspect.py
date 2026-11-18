@@ -260,6 +260,19 @@ class LiveListTests(InspectFixture):
         self.assertEqual(pr["review"]["severity"], {"critical": 0, "high": 0, "medium": 0, "low": 0})
         self.assert_json(result)
 
+    def test_live_failure_uses_last_good_list_cache(self):
+        self.add_pr(401)
+        atomic_json(self.config.repo_state / "review-list-cache.json", {
+            "generated_at": "2026-01-10T00:00:00+00:00",
+            "prs": [self.raw(402, title="From cache", updated_at="2026-01-09T00:00:00+00:00")],
+        })
+        with self.live(FakeGitCode(error=RuntimeError("handshake timed out"))):
+            result = list_pulls(self.config)
+        self.assertEqual(result["source"], "cache")
+        self.assertIn("handshake timed out", result["source_error"])
+        self.assertEqual([pr["number"] for pr in result["prs"]], [402])
+        self.assertEqual(result["prs"][0]["title"], "From cache")
+
     def test_live_failure_falls_back_to_cache_with_source_error(self):
         self.add_pr(401)
         self.add_job(401, "pending", payload_pr=self.raw(401, title="Cached 401"))

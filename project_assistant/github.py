@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+import ssl
 import subprocess
-from urllib.error import HTTPError
+import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 from .common import canonical_repo
 
@@ -66,6 +69,81 @@ def github_token():
     return token
 
 
+NETWORK_ERRORS = (URLError, TimeoutError, socket.timeout, ssl.SSLError, OSError)
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF = 1.5
+
+
+def git_proxy():
+    """读取 git 的代理配置。
+
+    很多机器上 git 配了本地代理（如 127.0.0.1:10808）才能访问 GitHub，而 Python
+    urllib 只认环境变量；不读 git 配置就会出现「git 能拉代码、控制器却 TLS 超时」。
+    """
+    for name in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy",
+                 "HTTP_PROXY", "http_proxy"):
+        value = os.environ.get(name)
+        if value:
+            return value
+    if os.name == "nt":
+        import winreg
+        for name in ("HTTPS_PROXY", "HTTP_PROXY"):
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+                    value, _ = winreg.QueryValueEx(key, name)
+                if value:
+                    return value
+            except OSError:
+                pass
+    for key in ("https.proxy", "http.proxy"):
+        try:
+            result = subprocess.run(["git", "config", "--global", "--get", key],
+                                    capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        value = (result.stdout or "").strip()
+        if value:
+            return value if "://" in value else "http://" + value
+    return None
+
+
+def _opener():
+    proxy = git_proxy()
+    if not proxy:
+        return None
+    return build_opener(ProxyHandler({"http": proxy, "https": proxy}))
+
+
+def _open(request, timeout):
+    opener = _opener()
+    if opener is not None:
+        return opener.open(request, timeout=timeout)
+    return urlopen(request, timeout=timeout)
+
+
+def _open_with_retry(make_request, timeout=30):
+    """GitHub API 常见 TLS 握手超时/连接重置：短退避重试，避免整页直接降级。"""
+    last = None
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            with _open(make_request(), timeout=timeout) as response:
+                return response
+        except HTTPError:
+            raise
+        except NETWORK_ERRORS as exc:
+            last = exc
+            if attempt + 1 >= RETRY_ATTEMPTS:
+                break
+            time.sleep(RETRY_BACKOFF ** attempt)
+    detail = str(last) if last is not None else "unknown"
+    proxy = git_proxy()
+    hint = f"检测到 git 代理 {proxy}，已尝试经它访问；" if proxy else ""
+    raise RuntimeError(
+        f"GitHub 网络不可达（{detail}）；已重试 {RETRY_ATTEMPTS} 次。{hint}"
+        "请确认代理/VPN 客户端在运行且能访问 github.com（git ls-remote 也应能通）；"
+        "也可设置 HTTPS_PROXY，或在项目配置里指定 github_api_url 镜像。")
+
+
 class GitHub:
     host = "github.com"
 
@@ -99,7 +177,7 @@ class GitHub:
             return self.transport(path, params)
         url = self.base_url + path + ("?" + urlencode(params) if params else "")
         try:
-            with urlopen(Request(url, headers=self._headers()), timeout=30) as response:
+            with _open_with_retry(lambda: Request(url, headers=self._headers())) as response:
                 return json.load(response)
         except HTTPError as exc:
             if exc.code == 404:
@@ -122,7 +200,8 @@ class GitHub:
         headers["Content-Type"] = "application/json; charset=utf-8"
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         try:
-            with urlopen(Request(self.base_url + path, data=body, headers=headers, method="POST"), timeout=30) as response:
+            with _open_with_retry(
+                    lambda: Request(self.base_url + path, data=body, headers=headers, method="POST")) as response:
                 return json.load(response)
         except HTTPError as exc:
             if exc.code == 422:

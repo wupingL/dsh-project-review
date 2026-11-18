@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from .backends import backend_checks, model_destination
 from .comments import post_findings
-from .common import ROOT, UNDERSTAND_CORE, Config, read_json, run
+from .common import ROOT, UNDERSTAND_CORE, Config, atomic_json, now, read_json, run
 from .context import Context
 from .feature import Features
 from .gitcode import GitCode
@@ -238,6 +238,11 @@ def main(argv=None):
         elif args.command == "review":
             if args.action == "list":
                 result = list_pulls(config, offline=args.offline)
+                # 在线成功时缓存一份，供网络抖动或离线时回退展示。
+                if result.get("source") == "live" and isinstance(result.get("prs"), list):
+                    atomic_json(config.repo_state / "review-list-cache.json",
+                                {"generated_at": result.get("generated_at") or now(),
+                                 "prs": result["prs"]})
             elif args.action == "show":
                 result = show_pull(config, args.pr, offline=args.offline)
             elif args.action == "comment":

@@ -1,4 +1,4 @@
-﻿# RecSDK 代码检视（DSH 插件 bundle）
+# RecSDK 代码检视（DSH 插件 bundle）
 
 把 `project-assistant` 接入 DeepSeek Harness Web UI：侧栏「代码检视」整页。页面是一个项目控制台：
 
@@ -193,7 +193,8 @@ PR 上常已有人工或其他工具的评论，审查与评论都会考虑：
 
 支持的仓库平台：**GitCode/AtomGit 与 GitHub**（按仓库地址域名自动选择适配器）。GitHub 私有仓库需要
 `GITHUB_TOKEN`/`GH_TOKEN`（或本机 git 凭据助手已登录）；GitHub 不提供 Actions 状态与评论 `resolved` 标记，
-这两项会体现在覆盖缺口/去重策略里。
+这两项会体现在覆盖缺口/去重策略里。GitHub API 访问失败时会自动读取 git 的 `http(s).proxy` 代理、做 3 次短退避重试，
+并在页面回退到最近一次成功拉取的 PR 列表缓存。
 
 ## 项目管理：导入（会下载源码）与移除
 

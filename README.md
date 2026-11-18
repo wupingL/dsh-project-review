@@ -89,6 +89,17 @@ git pull
 说明项目是 GitHub 仓库但控制器拿不到 token（私有仓库），或仓库地址/权限有误。设置 `GITHUB_TOKEN`/`GH_TOKEN`，
 或确认本机 git 凭据助手已登录 GitHub（控制器会自动回退 `git credential fill`）。
 
+**页面显示「数据源降级：GitHub 网络不可达（…handshake operation timed out）」**
+
+控制器访问 `api.github.com` 超时。常见原因是机器通过本地代理/VPN 访问 GitHub：git 配了 `https.proxy`（如
+`127.0.0.1:10808`）但代理客户端没运行、或上游不可达。处理顺序：
+
+1. 确认代理/VPN 客户端在运行，且 `git ls-remote <仓库>` 能通；
+2. 控制器会自动读取 git 的 `http(s).proxy` 配置作为 Python 的代理；也可显式设置 `HTTPS_PROXY` 环境变量；
+3. 有镜像时可在项目配置里加 `github_api_url` 指向兼容 GitHub 的 API 地址；
+4. 网络失败时页面会回退到「最近一次成功拉取的 PR 列表」（`review-list-cache.json`）或本地数据库缓存，不会白屏；
+   控制器对 TLS/超时已做 3 次短退避重试。
+
 **审查一直「进行中」**
 
 Harness 重启会杀掉正在跑的 CLI 子进程；插件启动时会把遗留任务标记为失败并给出「重试审查」，也可以点「重试审查」或

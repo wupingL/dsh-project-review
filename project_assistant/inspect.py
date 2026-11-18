@@ -16,7 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .common import now
+from .common import now, read_json
 from .gitcode import GitCode
 from .platforms import create_api
 
@@ -668,6 +668,18 @@ def _changed_files(report):
 # Public API
 # ---------------------------------------------------------------------------
 
+def _list_cache_path(config):
+    """最近一次成功在线拉取的 PR 列表（网络抖动时整页不至于空白）。"""
+    return config.repo_state / "review-list-cache.json"
+
+
+def list_cache_time(config):
+    data = read_json(_list_cache_path(config), {})
+    if isinstance(data, dict) and isinstance(data.get("prs"), list):
+        return data.get("generated_at")
+    return None
+
+
 def list_pulls(config, *, offline=False):
     """List open PRs (live) or cached PRs (offline/live failure) with review state."""
     generated_at = now()
@@ -686,6 +698,10 @@ def list_pulls(config, *, offline=False):
             source = "live"
         except Exception as exc:  # network/token/platform failures degrade to cache
             source_error = str(exc) or exc.__class__.__name__
+            cached_list = read_json(_list_cache_path(config), {})
+            cached_rows = cached_list.get("prs") if isinstance(cached_list, dict) else None
+            if isinstance(cached_rows, list) and cached_rows:
+                rows = cached_rows
 
     pulls = []
     if rows is not None:

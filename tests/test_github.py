@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import tempfile
 import unittest
@@ -134,6 +134,86 @@ class GitHubWriteTests(unittest.TestCase):
         path, payload = self.calls[0]
         self.assertEqual(path, "/repos/o/r/issues/7/comments")
         self.assertEqual(payload, {"body": "正文"})
+
+
+class RetryTests(unittest.TestCase):
+    """GitHub API 偶尔 TLS 握手超时：应短退避重试而不是整页降级。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.config = make_config(Path(self.tmp.name), "https://github.com/o/r")
+
+    def test_get_retries_transient_network_errors(self):
+        import ssl
+        from project_assistant import github
+
+        calls = []
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                import json as _json
+                return _json.dumps([]).encode("utf-8")
+
+        def flaky(request, timeout=30):
+            calls.append(request.full_url)
+            if len(calls) < 3:
+                raise ssl.SSLError("handshake operation timed out")
+            return FakeResponse()
+
+        with patch.object(github, "_opener", lambda: None), patch.object(github, "urlopen", flaky), \
+                patch.object(github.time, "sleep", lambda *_: None):
+            result = github.GitHub(self.config).pulls()
+        self.assertEqual(result, [])
+        self.assertEqual(len(calls), 3)
+
+    def test_get_reports_actionable_error_after_retries(self):
+        import ssl
+        from project_assistant import github
+
+        def failing(request, timeout=30):
+            raise ssl.SSLError("handshake operation timed out")
+
+        with patch.object(github, "_opener", lambda: None), patch.object(github, "urlopen", failing), \
+                patch.object(github.time, "sleep", lambda *_: None):
+            with self.assertRaises(RuntimeError) as caught:
+                github.GitHub(self.config).pulls()
+        message = str(caught.exception)
+        self.assertIn("网络不可达", message)
+        self.assertIn("HTTPS_PROXY", message)
+
+
+class ProxyTests(unittest.TestCase):
+    def test_proxy_from_git_config_when_env_absent(self):
+        import subprocess
+        from project_assistant import github
+
+        class Result:
+            def __init__(self, value):
+                self.stdout = value + "\n"
+
+        def fake_run(args, **kwargs):
+            if "https.proxy" in args:
+                return Result("127.0.0.1:10808")
+            return Result("")
+
+        with patch.object(github.os, "environ", {}), \
+                patch.object(github.subprocess, "run", fake_run), \
+                patch.object(github.os, "name", "posix"):
+            self.assertEqual(github.git_proxy(), "http://127.0.0.1:10808")
+
+    def test_env_proxy_wins(self):
+        from project_assistant import github
+        with patch.object(github.os, "environ", {"HTTPS_PROXY": "http://proxy.local:8080"}):
+            self.assertEqual(github.git_proxy(), "http://proxy.local:8080")
 
 
 class ListPullsWithGitHubTests(unittest.TestCase):

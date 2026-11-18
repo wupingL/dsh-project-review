@@ -101,6 +101,8 @@ window.__ModuleLoader__.load({
       'comment.emptyBody': '评论正文不能为空',
       'review.openHeading': '上一轮仍未解决',
       'review.openHint': '这些问题上一轮已提出且仍未修复，可继续勾选并提交评论；已修复的不会出现在这里。',
+      'finding.lineMoved': '上一版第 {n} 行',
+      'finding.lineDeleted': '代码行已删除/大幅修改',
       'comment.submit': '提交评论到 PR',
       'comment.hint': '勾选意见后先预览，再确认提交到 PR 对应代码处',
       'comment.posting': '提交中…',
@@ -395,6 +397,8 @@ window.__ModuleLoader__.load({
       'comment.emptyBody': 'A comment body cannot be empty',
       'review.openHeading': 'Still open from the last review',
       'review.openHint': 'These were raised before and are not fixed yet; you can still select and comment on them. Fixed issues drop off this list.',
+      'finding.lineMoved': 'was line {n}',
+      'finding.lineDeleted': 'code line removed/rewritten',
       'comment.submit': 'Post to PR',
       'comment.hint': 'Select findings, preview the comments, then confirm to post them at the matching code lines',
       'comment.posting': 'Posting…',
@@ -1291,6 +1295,7 @@ window.__ModuleLoader__.load({
 .rr-page .rr-setup-text { font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .rr-page .rr-comment-edit-hint { font-size: 11px; margin: 2px 0 6px; }
 .rr-page .rr-open-hint { font-size: 11px; margin-bottom: 6px; }
+.rr-page .rr-evidence-shift { font-size: 10.5px; color: var(--dsw-alias-label-tertiary, #8a8f99); }
 .rr-page .rr-open-reason { font-size: 11.5px; margin: 4px 0; }
 .rr-page .rr-comment-edit {
   width: 100%; box-sizing: border-box; resize: vertical;
@@ -2280,7 +2285,9 @@ window.__ModuleLoader__.load({
                   const path = isObject(entry) ? asText(entry.path, '') : asText(entry, '');
                   const line = isObject(entry) && entry.line !== null && entry.line !== undefined ? String(entry.line) : '';
                   const reason = isObject(entry) ? asText(entry.reason, '') : '';
-                  return { path: path, line: line, reason: reason };
+                  const previousLine = isObject(entry) && entry.previous_line ? String(entry.previous_line) : '';
+                  const lineStatus = isObject(entry) ? asText(entry.line_status, '') : '';
+                  return { path: path, line: line, reason: reason, previousLine: previousLine, lineStatus: lineStatus };
                 }).filter(function (entry) { return entry.path || entry.reason; });
                 return h('article', {
                   key: findingId,
@@ -2328,6 +2335,11 @@ window.__ModuleLoader__.load({
                       const displayPath = entry.path + (entry.line ? ':' + entry.line : '');
                       return h('div', { key: evidenceIndex, className: 'rr-evidence-item' },
                         entry.path ? h('code', { className: 'rr-evidence-path' }, displayPath) : null,
+                        entry.lineStatus === 'deleted'
+                          ? h('span', { className: 'rr-evidence-shift' }, t('finding.lineDeleted'))
+                          : (entry.previousLine && entry.previousLine !== entry.line
+                              ? h('span', { className: 'rr-evidence-shift' }, fill(t('finding.lineMoved'), { n: entry.previousLine }))
+                              : null),
                         entry.reason ? h('span', { className: 'rr-evidence-reason' }, entry.reason) : null
                       );
                     })
@@ -2443,7 +2455,9 @@ window.__ModuleLoader__.load({
                   const path = isObject(entry) ? asText(entry.path, '') : asText(entry, '');
                   const line = isObject(entry) && entry.line !== null && entry.line !== undefined ? String(entry.line) : '';
                   const reason = isObject(entry) ? asText(entry.reason, '') : '';
-                  return { path: path, line: line, reason: reason };
+                  const previousLine = isObject(entry) && entry.previous_line ? String(entry.previous_line) : '';
+                  const lineStatus = isObject(entry) ? asText(entry.line_status, '') : '';
+                  return { path: path, line: line, reason: reason, previousLine: previousLine, lineStatus: lineStatus };
                 }).filter(function (entry) { return entry.path || entry.reason; });
                 return h('article', { key: id, className: 'rr-finding rr-open-finding' },
                   h('div', { className: 'rr-finding-head' },
@@ -2474,6 +2488,11 @@ window.__ModuleLoader__.load({
                       const displayPath = entry.path + (entry.line ? ':' + entry.line : '');
                       return h('div', { key: evidenceIndex, className: 'rr-evidence-item' },
                         entry.path ? h('code', { className: 'rr-evidence-path' }, displayPath) : null,
+                        entry.lineStatus === 'deleted'
+                          ? h('span', { className: 'rr-evidence-shift' }, t('finding.lineDeleted'))
+                          : (entry.previousLine && entry.previousLine !== entry.line
+                              ? h('span', { className: 'rr-evidence-shift' }, fill(t('finding.lineMoved'), { n: entry.previousLine }))
+                              : null),
                         entry.reason ? h('span', { className: 'rr-evidence-reason' }, entry.reason) : null
                       );
                     })

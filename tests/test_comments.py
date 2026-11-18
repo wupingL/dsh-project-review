@@ -451,6 +451,18 @@ class OpenFindingCommentTests(unittest.TestCase):
         self.assertEqual(api2.calls[0]["path"], "src/b.py")
 
 
+class DeletedEvidenceTests(unittest.TestCase):
+    def test_deleted_code_line_is_not_used_as_inline_anchor(self):
+        finding = {"title": "T", "severity": "high", "trigger": "t", "consequence": "c",
+                   "verification": "v",
+                   "evidence": [{"path": "a.py", "line": 10, "line_status": "deleted",
+                                 "previous_line": 10, "reason": "r"}]}
+        plans, notes = plan_comments([finding], {"a.py": {10}}, ["F1"])
+        self.assertFalse(plans[0]["inline"])
+        self.assertIn("代码行已删除", "".join(notes))
+        self.assertIn("目标位置", plans[0]["body"])
+
+
 class AddedLineTests(unittest.TestCase):
     """新增行解析用真实 Git 仓库验证（行内评论只能落在这些行上）。"""
 

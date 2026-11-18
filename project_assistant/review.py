@@ -176,6 +176,50 @@ class Reviews:
                     "excerpt": brief(match.get("body"), 160),
                 }
 
+    def remap_open_findings(self, findings, previous_head, head):
+        """上一轮意见的证据行随代码演进同步到当前 head（行号漂移修正）。"""
+        if not previous_head or not head or previous_head == head or not isinstance(findings, list):
+            return findings
+        maps = {}
+        for finding in findings:
+            if not isinstance(finding, dict):
+                continue
+            evidence = finding.get("evidence")
+            if not isinstance(evidence, list):
+                continue
+            remapped = []
+            for entry in evidence:
+                if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                    remapped.append(entry)
+                    continue
+                path = entry["path"]
+                if path not in maps:
+                    try:
+                        maps[path] = self.git.line_map(previous_head, head, path)
+                    except Exception:
+                        maps[path] = None
+                mapper = maps[path]
+                line = entry.get("line")
+                if mapper is None or not isinstance(line, int):
+                    remapped.append(entry)
+                    continue
+                try:
+                    new_line, status = mapper(line)
+                except Exception:
+                    remapped.append(entry)
+                    continue
+                updated = dict(entry)
+                if status == "deleted":
+                    updated["line_status"] = "deleted"
+                    updated["previous_line"] = line
+                elif status == "changed" or new_line != line:
+                    updated["previous_line"] = line
+                    updated["line"] = new_line
+                    updated["line_status"] = status
+                remapped.append(updated)
+            finding["evidence"] = remapped
+        return findings
+
     def previous_review(self, job):
         """同一 PR 上一份（指纹不同）审查报告，用于增量对比。"""
         root = self.config.repo_state / "reports" / job["number"]
@@ -412,6 +456,8 @@ class Reviews:
         comparison = self.compare_previous(previous, previous_findings, result)
         if comparison:
             # 本轮新发现进 findings；上一版仍未解决的进 open_findings（页面仍可勾选提交）。
+            # 代码演进后行号会漂移：把上一轮意见的证据行同步到当前 head。
+            self.remap_open_findings(comparison["items"], previous.get("head_sha"), job["head_sha"])
             result["findings"] = comparison["new"]
             result["open_findings"] = comparison["open"]
             progress(f"pr #{job['number']}：对比上一版（已修复 {len(comparison['fixed'])}，"

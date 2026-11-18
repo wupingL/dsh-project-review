@@ -140,6 +140,9 @@ plugin_manager install_bundle target = "D:\\GRVLLM\\ReviewWork\\project-assistan
   - `fixed`：已修复（从列表消失）
   - `open`：仍存在或部分修复 → 同时写入报告的 `open_findings`，页面在「上一轮仍未解决」区块继续展示，
     仍可勾选、评论、提交（编号 `P1…Pn`）；只有 confirmed 已修复的问题才会消失
+  - **行号同步**：上一轮证据行会按 `上一版 head → 当前 head` 的 diff 重新映射到当前代码行（插入/删除/改写都会处理），
+    改写/移动过的证据会带 `previous_line` / `line_status`，页面显示「上一版第 N 行」；对应代码已被删除时标记
+    `deleted`，评论自动退化为 PR 级评论而不是按旧行号锚定
   - `uncertain`：无法确认（模型漏答时也落到这里）
   - `new`：本轮新发现（同时写入报告的「确认的问题」）
   报告 `review.md` 增加「与上一版审查的对比」与「上一轮仍未解决的问题」，页面详情也有对应区块；`review.json.metadata` 记录

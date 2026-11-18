@@ -510,6 +510,8 @@ def _finding_cards(value):
                     "path": _text(item.get("path")) or "",
                     "line": line if line is not None else 0,
                     "reason": _text(item.get("reason")) or "",
+                    "previous_line": _int(item.get("previous_line")),
+                    "line_status": _text(item.get("line_status")),
                 })
         result.append({
             "origin": _text(finding.get("origin")) or "new",
@@ -571,7 +573,7 @@ def _stale_message(report):
     return None
 
 
-def _extended_review(view, report, metadata, review):
+def _extended_review(config, view, report, metadata, review):
     value = dict(view)
     comparison = _comparison(report)
     value.update({
@@ -579,7 +581,7 @@ def _extended_review(view, report, metadata, review):
         "intent": _text(review.get("intent")),
         "summary": _text(review.get("summary")),
         "findings": _finding_cards(review.get("findings")),
-        "open_findings": _open_finding_cards(_open_findings(review, comparison)),
+        "open_findings": _open_finding_cards(_open_findings(config, review, comparison, metadata)),
         "risks_to_verify": _strings(review.get("risks_to_verify")),
         "coverage_gaps": _strings(review.get("coverage_gaps")),
         "affected_flows": _strings(review.get("affected_flows")),
@@ -614,7 +616,7 @@ def _posted_comments(report):
     return result
 
 
-def _open_findings(review, comparison):
+def _open_findings(config, review, comparison, metadata=None):
     """上一轮未解决的意见；兼容旧报告（只有 comparison.json，没有 open_findings 字段）。"""
     direct = review.get("open_findings")
     if isinstance(direct, list) and direct:
@@ -647,7 +649,55 @@ def _open_findings(review, comparison):
             "reason": item.get("reason"),
             "origin": "previous",
         })
-    return merged_items
+    return _remap_evidence(config, merged_items, (metadata or {}).get("previous_head_sha"),
+                           (metadata or {}).get("head_sha"))
+
+
+def _remap_evidence(config, items, previous_head, head):
+    """旧报告兼容：把上一版证据行同步到当前 head（新报告在生成时已同步）。"""
+    if not previous_head or not head or previous_head == head:
+        return items
+    already = any(entry.get("previous_line") or entry.get("line_status")
+                  for item in items if isinstance(item, dict)
+                  for entry in (item.get("evidence") or []) if isinstance(entry, dict))
+    if already:
+        return items
+    try:
+        from .git import Git
+        git = Git(config)
+    except Exception:
+        return items
+    maps = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for entry in item.get("evidence") or []:
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("path")
+            line = entry.get("line")
+            if not isinstance(path, str) or not isinstance(line, int):
+                continue
+            if path not in maps:
+                try:
+                    maps[path] = git.line_map(previous_head, head, path)
+                except Exception:
+                    maps[path] = None
+            mapper = maps[path]
+            if mapper is None:
+                continue
+            try:
+                new_line, status = mapper(line)
+            except Exception:
+                continue
+            if status == "deleted":
+                entry["line_status"] = "deleted"
+                entry["previous_line"] = line
+            elif status == "changed" or new_line != line:
+                entry["previous_line"] = line
+                entry["line"] = new_line
+                entry["line_status"] = status
+    return items
 
 
 def _open_finding_cards(value):
@@ -844,7 +894,7 @@ def show_pull(config, number, *, offline=False):
         active = bool(row["active"]) if row is not None else _is_active(raw, branches)
 
     review, report, metadata, review_data = _review_view(config, number, snapshot)
-    extended = _extended_review(review, report, metadata, review_data)
+    extended = _extended_review(config, review, report, metadata, review_data)
 
     artifact = _artifact_dir(config, number, report)
     if artifact is None:

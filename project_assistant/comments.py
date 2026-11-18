@@ -169,13 +169,20 @@ def find_overlapping_comment(finding, comments, window=3):
 
 
 def _evidence(finding):
+    """取第一条可定位证据；行号已随代码删除的条目跳过（不能按旧行号评论）。"""
     evidence = finding.get("evidence")
-    if isinstance(evidence, list) and evidence:
-        first = evidence[0]
-        if isinstance(first, dict) and first.get("path"):
-            line = first.get("line")
-            return {"path": str(first["path"]), "line": line if isinstance(line, int) else 0,
-                    "reason": _clip(first.get("reason"), 200)}
+    if not isinstance(evidence, list):
+        return None
+    for entry in evidence:
+        if not isinstance(entry, dict) or not entry.get("path"):
+            continue
+        if entry.get("line_status") == "deleted":
+            continue
+        line = entry.get("line")
+        return {"path": str(entry["path"]), "line": line if isinstance(line, int) else 0,
+                "reason": _clip(entry.get("reason"), 200),
+                "previous_line": entry.get("previous_line"),
+                "line_status": entry.get("line_status")}
     return None
 
 
@@ -399,7 +406,15 @@ def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh"
         evidence = _evidence(finding) or {}
         path = evidence.get("path") or ""
         line = evidence.get("line") or 0
-        position = resolve_anchor(added_by_path.get(path, set()), line) if path else None
+        deleted_line = False
+        if not evidence:
+            for entry in finding.get("evidence") or []:
+                if isinstance(entry, dict) and entry.get("path"):
+                    path = str(entry["path"])
+                    line = entry.get("line") if isinstance(entry.get("line"), int) else 0
+                    deleted_line = entry.get("line_status") == "deleted"
+                    break
+        position = resolve_anchor(added_by_path.get(path, set()), line) if path and not deleted_line else None
         edited = str(bodies.get(identifier) or "").strip()
         body = edited or build_comment(finding, mode, lang)
         inline = bool(position) and bool(path)
@@ -417,7 +432,10 @@ def plan_comments(findings, added_by_path, selected_ids, mode="issue", lang="zh"
                           "posted as a PR-level comment)" if lang == "en"
                           else f"> 目标位置：`{location}`（该行不在本次 diff 的新增/修改行内，作为 PR 级评论提交）")
                 body = prefix + "\n\n" + body
-            notes.append(f"{identifier} 未命中 diff 新增行，退化为 PR 级评论")
+            if deleted_line:
+                notes.append(f"{identifier} 对应代码行已删除或大幅修改，按 PR 级评论提交")
+            else:
+                notes.append(f"{identifier} 未命中 diff 新增行，退化为 PR 级评论")
         footer = FOOTER_EN if lang == "en" else FOOTER
         if footer not in body:
             body = body.rstrip() + "\n\n" + footer

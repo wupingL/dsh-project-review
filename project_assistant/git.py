@@ -156,6 +156,47 @@ class Git:
     def changed(self, base, head):
         return [p for p in self.command("diff", "--name-only", "--no-renames", "-z", base, head).split("\0") if p]
 
+    def line_map(self, old, new, path):
+        """把 old 提交里的行号映射到 new 提交（同一路径）。
+
+        返回 ``map_line(line) -> (new_line, status)``，status 取 same/changed/deleted。
+        上一轮审查意见在代码演进后行号会漂移，用它把证据行同步到当前 head。
+        """
+        output = self.command("diff", "--unified=0", "--no-color", "--no-ext-diff", old, new, "--", path)
+        hunks = []
+        for line in output.splitlines():
+            if not line.startswith("@@"):
+                continue
+            match = re.match(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
+            if match:
+                hunks.append((int(match.group(1)), int(match.group(2) or 1),
+                              int(match.group(3)), int(match.group(4) or 1)))
+
+        def map_line(line):
+            if not hunks:
+                return line, "same"
+            delta = 0
+            for old_start, old_count, new_start, new_count in hunks:
+                if old_count == 0:
+                    # 纯新增：插入点之后的旧行整体后移。
+                    if line > old_start:
+                        delta += new_count
+                        continue
+                    return line + delta, "same"
+                end = old_start + old_count - 1
+                if line < old_start:
+                    return line + delta, "same"
+                if line <= end:
+                    if new_count == 0:
+                        # 该段代码被删除，没有对应新行。
+                        return new_start, "deleted"
+                    offset = min(line - old_start, new_count - 1)
+                    return new_start + offset, "changed"
+                delta += new_count - old_count
+            return line + delta, "same"
+
+        return map_line
+
     def added_lines(self, base, head, path):
         """新文件侧「新增/修改」行号集合（行内评论只能落在这些行上）。"""
         output = self.command("diff", "--unified=0", "--no-color", "--no-ext-diff", base, head, "--", path)

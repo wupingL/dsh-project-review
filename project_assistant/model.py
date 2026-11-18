@@ -268,6 +268,8 @@ FINDING = object_schema({"title": TEXT, "severity": {"type": "string", "enum": [
                         "trigger": TEXT, "system_function": TEXT, "consequence": TEXT,
                         "evidence": {"type": "array", "minItems": 1, "items": EVIDENCE},
                         "verification": TEXT, "confidence": {"type": "string", "enum": ["high", "medium"]}})
+# 违反的规则/检查单引用（可选）：评论模板的「违反规则」一栏；模型漏答或没有对应规则时为空。
+FINDING["properties"]["rules"] = STRINGS
 REVIEW_SCHEMA = object_schema({"intent": TEXT, "summary": TEXT,
                                "findings": {"type": "array", "items": FINDING},
                                "risks_to_verify": STRINGS, "coverage_gaps": STRINGS,

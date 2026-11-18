@@ -74,22 +74,32 @@ class CommentTextTests(unittest.TestCase):
         self.assertEqual(parse_id("3"), 3)
         self.assertIsNone(parse_id("x"))
 
-    def test_issue_comment_uses_review_language(self):
-        body = build_comment(findings()[0], "issue")
-        self.assertIn("【问题·高】反向缩放缺失", body)
-        self.assertIn("触发场景：NPU 反向", body)
-        self.assertIn("影响：精度整体漂移", body)
-        self.assertIn("建议：对比前后向输出", body)
+    def test_issue_comment_follows_review_template(self):
+        finding = dict(findings()[0])
+        finding["rules"] = ["references/checklists/serving.md：快照结构契约"]
+        body = build_comment(finding, "issue")
+        self.assertTrue(body.splitlines()[0].startswith("反向缩放缺失"))
+        self.assertIn("问题描述：", body)
+        self.assertIn("原因：", body)
+        self.assertIn("违反规则：references/checklists/serving.md", body)
+        self.assertIn("修复建议：", body)
         self.assertIn("`src/a.py:12`", body)
         self.assertIn("自动检视意见", body)
 
+    def test_multi_step_fix_is_numbered(self):
+        finding = dict(findings()[0])
+        finding["verification"] = "第一步：统一常量\n第二步：校验 manifest"
+        body = build_comment(finding, "issue")
+        self.assertIn("修复建议：", body)
+        self.assertIn("1. 第一步：统一常量", body)
+        self.assertIn("2. 第二步：校验 manifest", body)
+
     def test_suggestion_and_question_are_questions_or_advice(self):
         suggestion = build_comment(findings()[0], "suggestion")
-        self.assertIn("【建议】", suggestion)
-        self.assertNotIn("触发场景", suggestion)
+        self.assertIn("修复建议：", suggestion)
+        self.assertNotIn("违反规则", suggestion)
         question = build_comment(findings()[1], "question")
-        self.assertIn("【疑问】", question)
-        self.assertIn("是否已经覆盖该场景", question)
+        self.assertIn("待确认：", question)
         self.assertIn("`src/b.py:99`", question)
 
     def test_anchor_prefers_exact_then_nearby(self):
@@ -318,11 +328,12 @@ class CommentLanguageTests(unittest.TestCase):
         for mode in ("issue", "suggestion", "question"):
             body = build_comment(finding, mode, "en")
             self.assertIsNone(re.search(r"[\u4e00-\u9fff]", body), body)
-            self.assertIn("Evidence: `src/a.py:12`", body)
+            self.assertIn("`src/a.py:12`", body)
             self.assertTrue(body.endswith(FOOTER_EN))
-        self.assertIn("[Issue · High]", build_comment(finding, "issue", "en"))
-        self.assertIn("[Suggestion]", build_comment(finding, "suggestion", "en"))
-        self.assertIn("[Question]", build_comment(finding, "question", "en"))
+        self.assertIn("Problem:", build_comment(finding, "issue", "en"))
+        self.assertIn("Cause:", build_comment(finding, "issue", "en"))
+        self.assertIn("Suggested fix:", build_comment(finding, "issue", "en"))
+        self.assertIn("Question", build_comment(finding, "question", "en"))
 
     def test_edited_body_is_used_verbatim(self):
         plans, _ = plan_comments(findings(), {"src/a.py": {12}}, ["F1"],
@@ -386,7 +397,8 @@ class EditedCommentPostingTests(unittest.TestCase):
                                    report=self.report(), lang="en", translator=self.translator)
         self.assertEqual(result["lang"], "en")
         body = result["items"][0]["body"]
-        self.assertIn("[Issue · High] Translated finding 1", body)
+        self.assertTrue(body.startswith("Translated finding 1"))
+        self.assertIn("Problem:", body)
         self.assertIsNone(re.search(r"[\u4e00-\u9fff]", body), body)
 
     def test_confirm_submits_edited_body(self):

@@ -188,84 +188,89 @@ def _evidence(finding):
     return None
 
 
+def _evidence_brief(finding, limit=3):
+    entries = []
+    for entry in finding.get("evidence") or []:
+        if not isinstance(entry, dict) or not entry.get("path"):
+            continue
+        line = entry.get("line")
+        entries.append({"path": str(entry["path"]),
+                        "line": line if isinstance(line, int) else 0,
+                        "reason": _clip(entry.get("reason"), 160)})
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+def _fix_lines(prefix, verification):
+    """修复建议：多步骤时按模板渲染成编号列表。"""
+    steps = [part.strip(" -·\t") for part in (verification or "").splitlines() if part.strip()]
+    if len(steps) <= 1:
+        return [f"{prefix}{verification}"] if verification else []
+    return [prefix.rstrip()] + [f"{index}. {step}" for index, step in enumerate(steps, start=1)]
+
+
 def build_comment(finding, mode="issue", lang="zh"):
-    """按常用检视口径生成评论正文（zh/en 两套模板，字段文本由调用方决定语言）。"""
+    """按检视模板生成评论：标题 / 问题描述 / 原因 / 违反规则 / 修复建议。"""
     english = lang == "en"
-    title = _clip(finding.get("title"), 160) or ("Review finding" if english else "审查意见")
-    severity = (SEVERITY_LABELS_EN if english else SEVERITY_LABELS).get(str(finding.get("severity")), "")
-    evidence = _evidence(finding)
-    reference = ""
-    if evidence and evidence["path"]:
-        location = evidence["path"] + (":" + str(evidence["line"]) if evidence["line"] else "")
-        reference = f"Evidence: `{location}`" if english else f"依据：`{location}`"
-        if evidence["reason"]:
-            reference += " — " + evidence["reason"]
-    trigger = _clip(finding.get("trigger"), 300)
-    consequence = _clip(finding.get("consequence"), 300)
-    verification = _clip(finding.get("verification"), 300)
+    title = _clip(finding.get("title"), 200) or ("Review finding" if english else "审查意见")
+    function = _clip(finding.get("system_function"), 400)
+    consequence = _clip(finding.get("consequence"), 400)
+    trigger = _clip(finding.get("trigger"), 400)
+    verification = _clip(finding.get("verification"), 900)
+    rules = [str(item).strip() for item in (finding.get("rules") or []) if str(item).strip()][:5]
+    evidence = _evidence_brief(finding)
     if english:
-        if mode == "suggestion":
-            lines = [f"[Suggestion] {title}", ""]
-            if verification:
-                lines += [f"Suggestion: {verification}", ""]
-            if reference:
-                lines += [reference, ""]
-        elif mode == "question":
-            lines = [f"[Question] {title}", ""]
-            question = "Is this scenario already covered"
-            question += f" ({trigger})" if trigger else ""
-            question += f"? If not, it may cause: {consequence}" if consequence else "?"
-            lines += [question, ""]
-            if reference:
-                lines += [reference, ""]
-        else:
-            head = f"[Issue{(' · ' + severity) if severity else ''}] {title}"
-            lines = [head, ""]
-            if trigger:
-                lines.append(f"Trigger: {trigger}")
-            if consequence:
-                lines.append(f"Impact: {consequence}")
-            if verification:
-                lines.append(f"Suggestion: {verification}")
-            if reference:
-                lines.append(reference)
-            lines.append("")
-        return "\n".join([line for line in lines if line is not None] + [FOOTER_EN])
-    if mode == "suggestion":
-        head = f"【建议】{title}"
-        lines = [head, ""]
-        if verification:
-            lines += [f"建议：{verification}", ""]
-        if reference:
-            lines += [reference, ""]
-    elif mode == "question":
-        head = f"【疑问】{title}"
-        lines = [head, ""]
-        question = "这里是否已经覆盖该场景"
-        question += f"：{trigger}" if trigger else ""
-        question += f"？若未覆盖，可能出现：{consequence}" if consequence else "？"
-        lines += [question, ""]
-        if reference:
-            lines += [reference, ""]
+        evidence_text = "; ".join(
+            f"`{item['path']}:{item['line']}`" + (f" ({item['reason']})" if item["reason"] else "")
+            for item in evidence)
     else:
-        head = f"【问题{('·' + severity) if severity else ''}】{title}"
-        lines = [head, ""]
-        if trigger:
-            lines.append(f"触发场景：{trigger}")
-        if consequence:
-            lines.append(f"影响：{consequence}")
-        if verification:
-            lines.append(f"建议：{verification}")
-        if reference:
-            lines.append(reference)
+        evidence_text = "；".join(
+            f"`{item['path']}:{item['line']}`" + (f"（{item['reason']}）" if item["reason"] else "")
+            for item in evidence)
+
+    problem = (" ".join(part for part in (function, consequence) if part)
+               if english else "；".join(part for part in (function, consequence) if part))
+    if english:
+        cause = f"{trigger} (Evidence: {evidence_text})" if trigger and evidence_text else (
+            trigger or (f"Evidence: {evidence_text}" if evidence_text else ""))
+    else:
+        cause = f"{trigger}；依据 {evidence_text}" if trigger and evidence_text else (
+            trigger or (f"依据 {evidence_text}" if evidence_text else ""))
+    labels = ({"problem": "Problem", "cause": "Cause", "rules": "Rules violated",
+               "fix": "Suggested fix"} if english else
+              {"problem": "问题描述", "cause": "原因", "rules": "违反规则", "fix": "修复建议"})
+
+    lines = [title, ""]
+    if mode == "question":
+        question = ("Is this scenario already covered"
+                    if english else "这里是否已经覆盖该场景")
+        question += f"（{trigger}）" if (trigger and not english) else ""
+        question += f"? If not, it may cause: {consequence}" if (english and consequence) else ""
+        question += f"？若未覆盖，可能出现：{consequence}" if (not english and consequence) else ""
+        lines.append(f"{'Question' if english else '待确认'}：{question}")
+        if evidence_text:
+            lines.append(f"Evidence: {evidence_text}" if english else f"依据：{evidence_text}")
+    else:
+        if problem:
+            lines.append(f"{labels['problem']}：{problem}" if not english else f"{labels['problem']}: {problem}")
+        if cause:
+            lines.append(f"{labels['cause']}：{cause}" if not english else f"{labels['cause']}: {cause}")
+        if mode != "suggestion" and rules:
+            joined = "；".join(rules) if not english else "; ".join(rules)
+            lines.append(f"{labels['rules']}：{joined}" if not english else f"{labels['rules']}: {joined}")
         lines.append("")
-    return "\n".join([line for line in lines if line is not None] + [FOOTER])
+        fix_prefix = "修复建议：" if not english else "Suggested fix: "
+        fix_body = _fix_lines(fix_prefix, verification)
+        if fix_body:
+            lines.extend(fix_body)
+    return "\n".join([line for line in lines if line is not None] + ["", FOOTER_EN if english else FOOTER])
 
 
 def _finding_key(finding):
     """同一意见的字段指纹，用于缓存英文翻译。"""
     parts = [finding.get("title"), finding.get("trigger"), finding.get("consequence"),
-             finding.get("verification")]
+             finding.get("verification"), "|".join(str(item) for item in finding.get("rules") or [])]
     for item in finding.get("evidence") or []:
         if isinstance(item, dict):
             parts.append(item.get("reason"))
@@ -287,6 +292,7 @@ def _translate_with_model(findings, config, output_path):
             "consequence": str(finding.get("consequence") or ""),
             "verification": str(finding.get("verification") or ""),
             "evidence": reasons,
+            "rules": [str(item) for item in finding.get("rules") or []],
         })
     prompt = ("把下面 JSON 中每条审查意见的 title/trigger/consequence/verification/evidence 翻译成"
               "自然、专业的英文；保留代码标识符、路径、行号与专有名词原样；不要合并或省略条目。"
@@ -299,7 +305,8 @@ def _translate_with_model(findings, config, output_path):
             "properties": {"key": {"type": "string"}, "title": {"type": "string"},
                            "trigger": {"type": "string"}, "consequence": {"type": "string"},
                            "verification": {"type": "string"},
-                           "evidence": {"type": "array", "items": {"type": "string"}}},
+                           "evidence": {"type": "array", "items": {"type": "string"}},
+                           "rules": {"type": "array", "items": {"type": "string"}}},
             "required": ["key", "title", "trigger", "consequence", "verification", "evidence"],
             "additionalProperties": False}}},
         "required": ["items"],
@@ -355,6 +362,8 @@ def localize_findings(findings, lang, config, report_dir=None, *, translator=Non
         copy["trigger"] = str(item.get("trigger") or copy.get("trigger") or "")
         copy["consequence"] = str(item.get("consequence") or copy.get("consequence") or "")
         copy["verification"] = str(item.get("verification") or copy.get("verification") or "")
+        if isinstance(item.get("rules"), list):
+            copy["rules"] = [str(rule) for rule in item["rules"]]
         reasons = item.get("evidence")
         if isinstance(reasons, list) and copy.get("evidence"):
             evidence = []

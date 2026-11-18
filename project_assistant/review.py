@@ -468,6 +468,8 @@ class Reviews:
         prompt += ("\n证据要求：每条 findings 的第一条证据必须是本次 diff 的新增/修改行"
                    "（被删除/未修改的代码不能作为唯一证据）；若根因位于未修改的关联代码，"
                    "请把证据指向本次修改中触发/暴露该问题的行，并在 reason 中说明关联的未修改位置。")
+        prompt += ("\n规则引用：若该问题违反了项目 review_rules、领域清单或参考检查项，请在该条 finding 的 rules 中"
+                   "给出引用（例如 `references/checklists/serving.md：V1 快照结构契约`）；无法对应时给空数组。")
         prompt += "\nPR 数据：" + json.dumps({"title": pr.get("title"), "body": pr.get("body", pr.get("description")),
                                                  "metadata": metadata}, ensure_ascii=False)
         prompt += "\n基线知识：" + json.dumps(base_pack, ensure_ascii=False)

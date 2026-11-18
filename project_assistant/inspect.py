@@ -524,6 +524,7 @@ def _finding_cards(value):
             "evidence": evidence,
             "verification": _text(finding.get("verification")) or "",
             "confidence": _text(finding.get("confidence")) or "",
+            "rules": _strings(finding.get("rules")),
             "existing_comment": _existing_comment(finding.get("existing_comment")),
         })
     return result

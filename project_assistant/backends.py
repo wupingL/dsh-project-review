@@ -129,20 +129,35 @@ def resolve_secret(settings, config):
     if value:
         return value, "windows-user-env"
     path = settings.get("credential_file")
+    key = settings.get("credential_key") or name
+
+    def _read(candidate):
+        if not candidate.is_file():
+            return None
+        try:
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ModelConfigurationError(
+                "credential_file could not be read as JSON") from exc
+        value = data.get(key) if isinstance(data, dict) else None
+        return str(value) if value else None
+
     if path:
         candidate = Path(path)
         if not candidate.is_absolute() and getattr(config, "path", None):
             candidate = Path(config.path).parent / candidate
-        if candidate.is_file():
-            try:
-                data = json.loads(candidate.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
-                raise ModelConfigurationError(
-                    "credential_file could not be read as JSON") from exc
-            key = settings.get("credential_key") or name
-            value = data.get(key) if isinstance(data, dict) else None
+        value = _read(candidate)
+        if value:
+            return value, "credential-file"
+    # 自愈：配置里可能残留了其他项目/已删除项目的凭据路径（例如项目被移除后重建），
+    # 此时回退到本项目自己的状态目录凭据文件。
+    local = getattr(config, "repo_state", None)
+    if local is not None:
+        fallback = Path(local) / "credentials.json"
+        if str(fallback) != str(path):
+            value = _read(fallback)
             if value:
-                return str(value), "credential-file"
+                return value, "credential-file-local"
     return None, "missing"
 
 

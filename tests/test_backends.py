@@ -167,6 +167,22 @@ class BackendTests(unittest.TestCase):
                     DeepSeek(config).invoke("analyze", SIMPLE_SCHEMA, root, root / "result.json")
             self.assertFalse((root / "result.json").exists())
 
+    def test_missing_credential_file_falls_back_to_project_state_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo_state = root / "state"
+            repo_state.mkdir(parents=True)
+            atomic_json(repo_state / "credentials.json", {"PA_FAKE_DEEPSEEK_KEY": "local-secret"})
+            backend = deepseek_backend("http://127.0.0.1:9")
+            backend["credential_file"] = str(root / "other-project" / "credentials.json")
+            config = FakeConfig(backend, repo_state=repo_state)
+            from project_assistant.backends import backend_settings, resolve_secret
+            with patch.dict(os.environ, {"PA_FAKE_DEEPSEEK_KEY": ""}, clear=False), \
+                    patch("project_assistant.backends._windows_user_env", return_value=None):
+                secret, source = resolve_secret(backend_settings(config), config)
+            self.assertEqual(secret, "local-secret")
+            self.assertEqual(source, "credential-file-local")
+
     def test_fake_server_source_round_is_bounded_and_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

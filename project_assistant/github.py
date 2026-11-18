@@ -122,12 +122,14 @@ def _open(request, timeout):
 
 
 def _open_with_retry(make_request, timeout=30):
-    """GitHub API 常见 TLS 握手超时/连接重置：短退避重试，避免整页直接降级。"""
+    """GitHub API 常见 TLS 握手超时/连接重置：短退避重试，避免整页直接降级。
+
+    返回尚未读取的响应对象，由调用方 ``with`` 打开并解析。
+    """
     last = None
     for attempt in range(RETRY_ATTEMPTS):
         try:
-            with _open(make_request(), timeout=timeout) as response:
-                return response
+            return _open(make_request(), timeout=timeout)
         except HTTPError:
             raise
         except NETWORK_ERRORS as exc:
